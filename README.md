@@ -1,4 +1,4 @@
-## Glomerulus segmentation pipeline
+## Glomerulus Segmentation Pipeline
 This repository includes the pipeline and pre-trained models for patch-level and WSI-level glomerulus segmentation. 
 
 ### 🌟 Highlights
