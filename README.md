@@ -44,7 +44,7 @@ img_data = cv2.imread('/path/to/your/image', -1)
 pred_res = inference_model(model, img_data)
 
 # get the predicted mask
-raw_logits = result.seg_logits.data
+raw_logits = pred_res.seg_logits.data
 _, pred_mask = raw_logits.max(axis=0, keepdims=True)
 pred_mask = pred_mask.cpu().numpy()[0]
 ```
