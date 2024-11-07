@@ -18,7 +18,7 @@ This dataset comprises 88 WSIs with edge sizes ranging from 14,000 to 65,000 pix
 The histopathological data come from mice and rats.  
 ### How to download
 **Image data**: https://datadryad.org/stash/dataset/doi:10.5061/dryad.fqz612jpc  
-**Annotation data**: https://drive.google.com/file/d/1rXacSs_7e3cnbHpHttTn539U1f_MgSEq/view?usp=sharing)  
+**Annotation data**: https://drive.google.com/file/d/1rXacSs_7e3cnbHpHttTn539U1f_MgSEq/view?usp=sharing  
 Note that the mask data is extracted from the original annotation data in SQLite database format.  
 We manually extract patches of size $1024\times1024$ and make sure each patch image contains at least one glomerulus annotation. 
 For WSI-level evaluation data, we manually checked and excluded the WSIs that are possibly incomplete in labeling, resulting in 27 WSI-level ground-truth masks.  

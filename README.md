@@ -15,4 +15,37 @@ Please see all pre-trained models in the [model zoo](docs/model_zoo.md)
 ## Datasets
 See [datasets](docs/datasets_howto.md) for download and pre-process the KPIs and mice glomeruli datasets
 
-## Notebooks and inference code will be released soon ...
+## Inference
+The following shows an example of loading and inferencing a model on a single input
+```python
+import cv2
+from mmseg.apis import init_model, inference_model
+from mmengine.registry import init_default_scope
+
+# init the default transform to mmseg
+init_default_scope('mmseg')
+
+# define test_pipeline
+test_pipeline = [
+    dict(type='LoadImageFromNDArray'),
+    dict(type='PackSegInputs'),
+]
+
+# example: load SegFormer model
+config_path = 'segformer_mit-b5_kpis_isbi_768.py'
+ckpt_path = 'segformer_mit_b5_kpis_768_best_mDice.pth'
+model = init_model(config_path, ckpt_path)
+
+# assign test_pipeline
+model.cfg.test_pipeline = test_pipeline
+
+# inference
+img_data = cv2.imread('/path/to/your/image', -1)
+pred_res = inference_model(model, img_data)
+
+# get the predicted mask
+raw_logits = result.seg_logits.data
+_, pred_mask = raw_logits.max(axis=0, keepdims=True)
+pred_mask = pred_mask.cpu().numpy()[0]
+```
+### Notebooks and more code will be released soon ...
