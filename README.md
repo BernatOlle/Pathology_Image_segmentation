@@ -63,7 +63,7 @@ python inference_patch_level.py --input KPIs24_Testing_Data/Task1_patch_level/te
 ```
 
 ### Inference & calculate Dice on WSI-level data
-Accept single WSI input.
+Accept single WSI input. WSI and its ground-truth mask must be available.  
 ```bash
 python inference_wsi_level_kpis.py --input KPIs24_Testing_Data/Task2_WSI_level/NEP25/18-579_wsi.tiff \
 --config segformer_mit-b5_kpis_768/segformer_mit-b5_kpis_isbi_768.py \
