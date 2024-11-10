@@ -14,7 +14,7 @@ synapse get -r syn54077668
 ```
 
 ## Mice glomeruli dataset
-This dataset comprises 88 WSIs with edge sizes ranging from 14,000 to 65,000 pixels. 
+This dataset comprises 88 WSIs and is released along with the [Orbit Image Analysis tool](https://www.orbit.bio/). 
 The histopathological data come from mice and rats.  
 ### How to download
 **Image data**: https://datadryad.org/stash/dataset/doi:10.5061/dryad.fqz612jpc  
