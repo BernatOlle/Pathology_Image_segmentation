@@ -17,7 +17,7 @@ Please see all pre-trained models in the [model zoo](docs/model_zoo.md)
 See [datasets](docs/datasets_howto.md) for download and pre-process the KPIs and mice glomeruli datasets
 
 ## Inference
-The following shows an example of loading and inferencing a model on a single input
+### Inference on a single input
 ```python
 import cv2
 from mmseg.apis import init_model, inference_model
@@ -49,4 +49,27 @@ raw_logits = pred_res.seg_logits.data
 _, pred_mask = raw_logits.max(axis=0, keepdims=True)
 pred_mask = pred_mask.cpu().numpy()[0]
 ```
-### Notebooks and more code will be released soon ...
+
+### Inference & calculate Dice on patch-level data
+Accept single image input or a directory of image patches (all patches must be from the same WSI).  
+Images and their ground-truth masks must be inside the `/img/` and `/mask/` directories.  
+For example, inference and apply stitching strategy
+```bash
+python inference_patch_level.py --input KPIs24_Testing_Data/Task1_patch_level/test/DN/11-363 \
+--config segformer_mit-b5_kpis_768/segformer_mit-b5_kpis_isbi_768.py  \
+--ckpt segformer_mit-b5_kpis_768/segformer_mit_b5_kpis_768_best_mDice.pth \
+--img_size 2048 \
+--stitch
+```
+
+### Inference & calculate Dice on WSI-level data
+Accept single WSI input.
+```bash
+python inference_wsi_level_kpis.py --input KPIs24_Testing_Data/Task2_WSI_level/NEP25/18-579_wsi.tiff \
+--config segformer_mit-b5_kpis_768/segformer_mit-b5_kpis_isbi_768.py \
+--ckpt segformer_mit-b5_kpis_768/segformer_mit_b5_kpis_768_best_mDice.pth \
+--patch_size 2048 --stride 1024
+```
+
+### TO-DO
+- [ ] Add notebook examples on how to process data and inference
