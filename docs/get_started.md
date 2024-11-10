@@ -26,18 +26,21 @@ mim install mmengine
 mim install "mmcv==2.0.1"
 ```
 
-**Step 3.** Install other necessary packages
-
-```shell
-pip install ftfy regex tqdm
-pip install "albumentations==1.4.6" --no-binary qudida,albumentations
-pip install "numpy<2"
-```
-
-**Step 5.** Install MMSegmentation, MMDet, MMPreTrain
+**Step 4.** Install MMSegmentation, MMDet, MMPreTrain
 
 ```shell
 pip install "mmsegmentation==1.2.2"
 pip install "mmdet>=3.0.0rc4"
 pip install "mmpretrain>=1.0.0rc7"
+```
+
+**Step 5.** Install other necessary packages
+
+```shell
+pip install ftfy regex tqdm
+pip install "albumentations==1.4.6" --no-binary qudida,albumentations
+pip install "numpy<2"
+pip install "monai==1.3.2"
+pip install tifffile
+pip install imagecodecs
 ```
