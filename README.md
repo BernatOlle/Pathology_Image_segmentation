@@ -86,3 +86,13 @@ python inference_wsi_level_mice_glomeruli.py \
 
 ### TO-DO
 - [ ] Add notebook examples on how to process data and inference
+
+## Citation
+```
+@article{cap24wsiglomerulus,
+  title   = {An Effective Pipeline for Whole-Slide Image Glomerulus Segmentation},
+  author  = {Quan Huu Cap},
+  journal = {arXiv preprint arXiv:2411.04782},
+  year    = {2024}
+}
+```

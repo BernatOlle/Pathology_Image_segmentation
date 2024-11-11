@@ -1,6 +1,6 @@
 # Pre-trained segmentation models on the KPIs and mice glomeruli datasets
 Each pre-trained model comes with a model weight and a config file. 
-To use the model, see the [Inference section](../README.md)
+To use the model, see the [Inference section](../README.md#inference)
 
 ### KPIs
 | Method      | Backbone   | Patch-level | WSI-level | Download |
