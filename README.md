@@ -61,6 +61,7 @@ python inference_patch_level.py \
 --ckpt segformer_mit-b5_kpis_768/segformer_mit_b5_kpis_768_best_mDice.pth \
 --img_size 2048 --stitch
 ```
+See [notebooks](notebooks) for a more detailed example.
 
 ### Inference & calculate Dice on WSI-level data
 Accept a single WSI input. 
@@ -83,9 +84,6 @@ python inference_wsi_level_mice_glomeruli.py \
 --ckpt mask2former_swin-b_orbit_768/best_mDice_iter_33520.pth \
 --patch_size 1024 --stride 512
 ```
-
-### TO-DO
-- [ ] Add notebook examples on how to process data and inference
 
 ## Citation
 ```

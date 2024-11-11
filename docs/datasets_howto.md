@@ -66,4 +66,4 @@ mice_glomeruli_root
         ...
 ```
 
-Please take a look at the [notebooks](../notebooks/) for more detailed examples.
+See [notebooks](../notebooks/) for a more detailed example.
