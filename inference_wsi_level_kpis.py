@@ -88,7 +88,7 @@ if __name__=="__main__":
 
     pbar = tqdm(range(x_slide*y_slide), leave=True)
     pbar.set_description(f'{wsi_name}')
-
+    print("Start")
     for xi in range(x_slide):
         for yi in range(y_slide):
             # update progress bar
@@ -132,6 +132,30 @@ if __name__=="__main__":
     pred_seg = pred_seg.cpu().numpy()[0]
     pred_seg = pred_seg.astype(np.uint8)
 
-    # calculate DICE score
-    dice_score = utils.calculate_dice(y_pred=pred_seg, y_gt=mask_data)
+
+
+    # Calcular DICE score
+    dice_score = utils.calculate_dice(y_pred=binary_mask, y_gt=mask_data)
     print(f'{wsi_name} - Dice: {dice_score}')
+   
+       # Convertir predicción en binario (0 y 255)
+    binary_mask = np.where(pred_seg > 0, 255, 0).astype(np.uint8)
+
+    # Reducir resolución (ejemplo: 4 veces más pequeña)
+    scale_factor = 0.25  # Reducir al 25% del tamaño original (ajústalo según necesites)
+    new_W = int(W * scale_factor)
+    new_H = int(H * scale_factor)
+
+    resized_mask = cv2.resize(binary_mask, (new_W, new_H), interpolation=cv2.INTER_NEAREST)
+
+    # Crear carpeta de salida si no existe
+    output_folder = "outputs_2"
+    os.makedirs(output_folder, exist_ok=True)
+
+    # Definir la ruta de guardado
+    save_path = os.path.join(output_folder, f"{wsi_name}_pred_mask.png")
+
+    # Guardar la máscara reducida en PNG
+    cv2.imwrite(save_path, resized_mask)
+
+    print(f"Máscara predicha guardada en: {save_path} con resolución reducida a {new_W}x{new_H}")

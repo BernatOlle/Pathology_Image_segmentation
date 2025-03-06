@@ -8,6 +8,8 @@ import numpy as np
 import torch
 from monai.data import MetaTensor
 from monai.metrics import DiceMetric
+import matplotlib.pyplot as plt
+from skimage import color
 
 from tqdm import tqdm
 
@@ -121,3 +123,40 @@ def wsi_thresholding(img, gauss_kernel=51, dilate_kernel=7, iterations=5):
     thres_img = cv2.dilate(thres_img, kernel, iterations=iterations)
     
     return thres_img
+
+
+
+
+def overlay(image: np.ndarray, mask: np.ndarray, alpha=0.5, bg_label=0, is_bgr=False) -> np.ndarray:
+    """
+    Combines image and its segmentation mask into a single image.
+    """
+    # convert back to RGB
+    if is_bgr:
+        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+    
+    res = color.label2rgb(mask, image, bg_label=bg_label, alpha=alpha)
+
+    mask = np.dstack(3*[mask]) != bg_label
+
+    res = res * mask
+
+    img_overlayed = image * (1 - mask) / 255. + res
+    
+    return img_overlayed
+
+def save_results(img_pred: np.ndarray, img_gt: np.ndarray, save_path: str, fig_size=(8, 10)):
+    """Save prediction and ground-truth images."""
+    fig, axs = plt.subplots(1, 2, figsize=fig_size)
+
+    img_list = [img_pred, img_gt]
+    titles = ['Pred', 'GT']
+    
+    # visualizing the results
+    for ax, img, title in zip(axs.ravel(), img_list, titles):
+        ax.imshow(img)
+        ax.set_title(title)
+    
+    plt.tight_layout()
+    plt.savefig(save_path)
+    plt.close()
