@@ -17,6 +17,9 @@ parser.add_argument("--data_root", type=str, help="path to mice glomerui dir")
 parser.add_argument("--ann_root", type=str, help="path to annotation mask JSON dir")
 parser.add_argument("--crop_size", type=int, default=1024)
 
+#esta función se encarga de encontrar el grupo de datos al que pertenece un archivo
+#recibe el path del archivo y el diccionario de grupos de datos
+#devuelve si es un archivo de test o no y el grupo al que pertenece
 def find_data_group(file_path: str, data_group: dict):
     is_test = False
     if '/test/' in file_path:
@@ -35,6 +38,9 @@ def find_data_group(file_path: str, data_group: dict):
     
     return None
 
+#esta función se encarga de procesar los puntos de una anotación
+#recibe los puntos x e y de una anotación
+#devuelve los puntos x e y procesados, verifica que el polígono esté cerrado
 def process_points(xpoints: list, ypoints: list):
     assert len(xpoints) == len(ypoints), f'xpoints and ypoints must have the same length!'
     new_xpoints = []
@@ -52,6 +58,9 @@ def process_points(xpoints: list, ypoints: list):
     
     return np.array(new_xpoints), np.array(new_ypoints)
 
+#esta función se encarga de obtener las coordenadas para recortar una anotación
+#recibe una anotación, el tamaño de la imagen WSI y el tamaño del recorte
+#devuelve las coordenadas para recortar la máscara de anotación
 def get_anno_coordinate(anno: dict, wsi_shape: tuple, crop_size=1024):
     """Given an annotation data, get the coordinate for cropping
     Args:
@@ -94,6 +103,7 @@ def get_anno_coordinate(anno: dict, wsi_shape: tuple, crop_size=1024):
 
 if __name__=="__main__":
     # data group for data split
+    
     data_group = {
         'FastRed_Mouse': ['6533664', '6533666', '6533668', '6533679', '6533672', '6533678', '6533683', '6533680', '6533682', '6533691', '6533687', '6533688'],
         'H_E_Mouse_G1': ['6654562', '6654559', '6654566', '6654568', '6654582', '6654586', '6654587', '6654588', '6654517'],
