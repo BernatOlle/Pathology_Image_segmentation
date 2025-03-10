@@ -66,9 +66,9 @@ if __name__=="__main__":
 
     assert (H, W) == mask_data.shape, f'WSI and GT mask not the same shape. {(H, W)} != {mask_data.shape}'
 
-    # make sure to inference on 40X digital magnification
+    # make sure to i nference on 40X digital magnification
     if '/NEP25/' not in wsi_path:
-        lv = 2
+        lv = 2 
         wsi_data = scipy.ndimage.zoom(wsi_data, (1/lv, 1/lv, 1), order=1)
         H, W, _ = wsi_data.shape
         mask_data = cv2.resize(mask_data, dsize=(W, H), interpolation=cv2.INTER_NEAREST)
