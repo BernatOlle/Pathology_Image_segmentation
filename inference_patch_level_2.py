@@ -150,36 +150,7 @@ if __name__=="__main__":
             # Calcular Dice Score
             dice_score = utils.calculate_dice(y_pred=pred_seg, y_gt=mask_data)
             mDice += dice_score
-        print("Recortando de nuevo: ")
-        for img_path, coord in pbar:
-            mask_path = get_mask_path(img_path)
-            mask_data = cv2.imread(mask_path, -1)
-            
-            x_min, y_min, x_max, y_max = coord
-            crop_pred_raw = pred_wsi_data[:, y_min:y_max, x_min:x_max]
-
-            crop_pred_raw = torch.softmax(crop_pred_raw, dim=0)
-
-            pred_max_value, pred_seg = crop_pred_raw.max(axis=0, keepdims=True)
-            pred_seg = pred_seg.cpu().numpy()[0]
-
-            # Convertir predicción en binario (0 y 255)
-            binary_mask = np.where(pred_seg > 0, 255, 0).astype(np.uint8)
-
-            # Crear la ruta de salida en la carpeta "outputs"
-            output_folder = "outputs"
-            os.makedirs(output_folder, exist_ok=True)  # Crear carpeta si no existe
-            save_path = os.path.join(output_folder, Path(img_path).stem + "_pred_mask.png")
-
-            # Guardar la máscara predicha
-            cv2.imwrite(save_path, binary_mask)
-
-            # Calcular Dice Score
-            dice_score = utils.calculate_dice(y_pred=pred_seg, y_gt=mask_data)
-            mDice += dice_score
-
-
-
+        
         print(f'Dice medio: {mDice/len(all_img_paths)}')
 
     else:
