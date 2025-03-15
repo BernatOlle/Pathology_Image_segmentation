@@ -77,6 +77,7 @@ def get_patch_data(patch_paths):
             img = cv2.imread(path)
             if img is not None:
                 height, width = img.shape[:2]
+                print(f"Dimensiones de {path}: {width}x{height}")
                 patch_data.append((path, slide_name, x, y, x + width, y + height))
                 slide_ids.append(slide_name)
             else:

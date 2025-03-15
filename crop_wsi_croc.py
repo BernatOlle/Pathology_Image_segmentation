@@ -115,7 +115,18 @@ def extract_patches_from_slide(slide_path, output_dir, patch_size=2048, level=0)
 
                     # Verificar si el parche no es completamente negro o blanco
                     patch_array = np.array(patch)
+                    # Aplicar tinte morado
+
                     if patch_array.std() > 10:  # Si hay variación en los valores de píxel
+                        #COMENTAR SI NO FUNCIONA
+                        alpha_r = 0.3  # Ajusta este valor para controlar la intensidad del tinte
+                        alpha_a = 0.5
+                        patch_array[:, :, 0] = np.clip(patch_array[:, :, 0] + alpha_r * 255, 0, 255)  # Aumenta rojo
+                        patch_array[:, :, 2] = np.clip(patch_array[:, :, 2] + alpha_a * 255, 0, 255)  # Aumenta azul
+
+                        # Convertir de nuevo a imagen PIL
+                        patch = Image.fromarray(patch_array.astype(np.uint8))
+                        #COMENTAR SI NO FUNCIONA
                         # Generar nombre del archivo
                         patch_filename = f"{slide_name}_patch{patch_id:04d}_x{x}_y{y}.png"
                         patch_path = slide_output_dir / patch_filename
