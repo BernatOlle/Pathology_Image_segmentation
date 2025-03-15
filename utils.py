@@ -2,7 +2,7 @@ import os
 import glob
 from pathlib import Path
 
-import cv2
+import cv2ss
 import numpy as np
 
 import torch
