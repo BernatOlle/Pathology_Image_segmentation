@@ -178,6 +178,7 @@ cython_debug/
 result/
 outputs/
 segformer/
+mask2Fromer/
 *.png
 *.jpg
 *.jpeg
