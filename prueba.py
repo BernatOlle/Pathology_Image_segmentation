@@ -1,28 +1,9 @@
 import cv2
 import numpy as np
-from mmseg.apis import init_model
-from mmseg.datasets import KPIsDataset
-from mmengine.dataset import build_dataset  # Importar desde mmengine
 
-# Carga configuración y modelo
-config_path = '/home/usuaris/imatge/bernat.olle/wsi_glomerulus_seg/segformer/segformer_mit-b5_kpis_isbi_768.py'
-ckpt_path = '/home/usuaris/imatge/bernat.olle/wsi_glomerulus_seg/segformer/segformer_mit_b5_kpis_768_best_mDice.pth'
-model = init_model(config_path, ckpt_path)
+# Carga una muestra aleatoria
+img = cv2.imread('/mnt/work/datasets/BKidney/KPIS/KPIs24 Training Data/Task1_patch_level/train/normal/normal_F4/img/normal_F4_5_5120_0_img.jpg')  # Valores deberían ser 0-255
+mask = cv2.imread('/mnt/work/datasets/BKidney/KPIS/KPIs24 Training Data/Task1_patch_level/train/normal/normal_F4/mask/normal_F4_5_5120_0_mask.jpg', cv2.IMREAD_GRAYSCALE)  # Valores deberían ser 0/255 o 0/1
 
-# Cargar configuración
-from mmengine import Config
-cfg = Config.fromfile(config_path)
-
-# Construir dataset usando la función build_dataset de mmengine
-dataset = build_dataset(cfg.train_dataloader.dataset)
-
-# Alternativa si build_dataset no funciona:
-# Si es un ConcatDataset, tomar solo la primera configuración de dataset
-# dataset = KPIsDataset(**cfg.train_dataloader.dataset.datasets[0])
-
-# Verifica una muestra aleatoria
-sample = dataset[0]
-mask = sample['data_samples'].gt_sem_seg.data[0].numpy()
-print("Valores únicos en máscara:", np.unique(mask))
-print("Porcentaje de píxeles positivos:", np.mean(mask > 0))
-
+print(f"Imagen - Min: {img.min()}, Max: {img.max()}")
+print(f"Máscara - Valores únicos: {np.unique(mask)}")
