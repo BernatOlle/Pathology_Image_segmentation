@@ -782,93 +782,96 @@ from mmengine.fileio import FileClient
 from mmseg.registry import TRANSFORMS
 
 @TRANSFORMS.register_module()
-class LoadKPIJPGAnnotations(BaseTransform):
-    """Cargador de máscaras JPG que solo guarda versiones procesadas.
-    
-    Args:
-        img_subdir (str): Subdirectorio de imágenes ('img' por defecto).
-        mask_subdir (str): Subdirectorio de máscaras ('mask' por defecto).
-        debug (bool): Si guarda máscaras procesadas (True por defecto).
-        max_debug_samples (int): Máximo de muestras a guardar (5 por defecto).
-    """
+class LoadKPIsAnnotations(BaseTransform):
+    """Cargador optimizado para imágenes JPG y máscaras PNG/JPG."""
+
     def __init__(self,
-                 img_subdir='img',
-                 mask_subdir='mask',
-                 debug=True,
-                 max_debug_samples=5,
+                 input_img_ext='.jpg',
+                 mask_ext='.jpg',
+                 debug=False,
+                 debug_samples=3,
+                 debug_dir="mask_debug",
                  **kwargs):
         super().__init__(**kwargs)
-        self.img_subdir = img_subdir
-        self.mask_subdir = mask_subdir
+        self.input_img_ext = input_img_ext
+        self.mask_ext = mask_ext
         self.debug = debug
-        self.max_debug_samples = max_debug_samples
-        self._debug_counts = {}
+        self.debug_samples = debug_samples
+        self.debug_dir = Path(debug_dir)
+        self._debug_count = 0
+        
+        
 
     def transform(self, results):
-        # 1. Obtener rutas
         img_path = Path(results['img_path'])
-        mask_path = self._validate_mask_path(img_path)
         
-        # 2. Cargar máscara
-        mask = self._load_mask(mask_path)
+        # Encontrar la ruta de la máscara simplemente reemplazando 'img' por 'mask'
+        # y añadiendo '_mask' al nombre del archivo
+        img_path_str = str(img_path)
+        mask_path = Path(img_path_str.replace('img', 'mask'))
+
         
-        # 3. Procesar (binarización)
+        
+        
+        
+        
+        # Verificar que la máscara existe
+        if not mask_path.exists():
+            
+            raise FileNotFoundError(f"No se encontró máscara para {img_path} en {mask_path}")
+        
+        
+        # Cargar máscara
+        mask = cv2.imread(str(mask_path), cv2.IMREAD_GRAYSCALE)
+        if mask is None:
+            
+            raise ValueError(f"Error al cargar máscara: {mask_path}")
+        
+        # Procesamiento
         processed_mask = self._process_mask(mask)
-        
-        # 4. Guardar máscara procesada (si debug=True)
-        if self.debug:
-            self._save_processed_only(img_path, processed_mask)
-        
-        # 5. Almacenar resultados
         results['gt_seg_map'] = processed_mask
         results['seg_fields'].append('gt_seg_map')
+
+        # Debug (opcional)
+        if self.debug and self._debug_count < self.debug_samples:
+            self._save_debug(img_path, mask_path, mask, processed_mask)
+            self._debug_count += 1
+
         return results
 
-    def _validate_mask_path(self, img_path):
-        """Busca máscaras en estructura paralela img/mask."""
-        mask_path = (img_path.parent.parent / self.mask_subdir / img_path.name)
-        if not mask_path.exists():
-            raise FileNotFoundError(f"Máscara no encontrada en: {mask_path}")
-        return mask_path
-
-    def _load_mask(self, path):
-        """Carga la máscara asegurando valores 0-255."""
-        mask = cv2.imread(str(path), cv2.IMREAD_GRAYSCALE)
-        if mask is None:
-            raise ValueError(f"Error al cargar: {path}")
-        return mask.astype(np.uint8)
 
     def _process_mask(self, mask):
-        """Binarización adaptativa para JPG."""
-        if mask.max() > 1:
-            # Binarización con umbral automático (Otsu)
-            _, mask = cv2.threshold(mask, 0, 1, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-        return mask
+        """Binarización robusta"""
+        if mask.ndim == 3:
+            mask = cv2.cvtColor(mask, cv2.COLOR_BGR2GRAY)
+        return (mask > 127).astype(np.uint8)
 
-    def _save_processed_only(self, img_path, proc_mask):
-        """Guarda SOLO la máscara procesada en ./processed_masks/."""
-        # 1. Contador por tipo de caso
-        case_type = img_path.parent.parent.name
-        self._debug_counts.setdefault(case_type, 0)
+    def _save_debug(self, img_path, mask_path, raw_mask, proc_mask):
+        """Guarda las máscaras procesadas en la carpeta actual/debug_dir"""
+        # Asegurar que exista el directorio de debug
+        self.debug_dir.mkdir(exist_ok=True)
         
-        # 2. Verificar límite de muestras
-        if self._debug_counts[case_type] >= self.max_debug_samples:
-            return
+        # Crear nombres para los archivos usando el nombre original
+        base_name = mask_path.stem
+        proc_mask_path = self.debug_dir / f"{base_name}_procesada.png"
+        overlay_mask_path = self.debug_dir / f"{base_name}_overlay.png"
+        original_mask_path = self.debug_dir / f"{base_name}_original.png"
         
-        # 3. Crear directorio
-        output_dir = Path.cwd() / "processed_masks"
-        output_dir.mkdir(exist_ok=True)
+        # Guardar máscara procesada
+        cv2.imwrite(str(proc_mask_path), proc_mask * 255)
         
-        # 4. Nombre del archivo (case_type_subcase_originalname_proc.png)
-        subcase = img_path.parent.name
-        original_name = img_path.stem
-        output_name = f"{case_type}_{subcase}_{original_name}_proc.png"
+        # Guardar máscara original para referencia
+        cv2.imwrite(str(original_mask_path), raw_mask)
         
-        # 5. Guardar (0=negro, 255=blanco)
-        cv2.imwrite(str(output_dir / output_name), proc_mask * 255)
-        self._debug_counts[case_type] += 1
-
-    def __repr__(self):
-        return (f'{self.__class__.__name__}('
-                f'img_subdir={self.img_subdir}, '
-                f'mask_subdir={self.mask_subdir})')
+        # Crear visualización comparativa
+        if raw_mask.ndim == 2:
+            # Crear una imagen de 3 canales para mostrar diferencias
+            compare_img = np.zeros((raw_mask.shape[0], raw_mask.shape[1], 3), dtype=np.uint8)
+            compare_img[:,:,0] = raw_mask          # Canal azul: máscara original
+            compare_img[:,:,1] = proc_mask * 255   # Canal verde: máscara procesada
+            cv2.imwrite(str(overlay_mask_path), compare_img)
+        
+        self.logger.info(f"Debug: Máscaras guardadas en {self.debug_dir}:")
+        self.logger.info(f"  - Máscara original ({mask_path}) guardada como: {original_mask_path.name}")
+        self.logger.info(f"  - Máscara procesada guardada como: {proc_mask_path.name}")
+        self.logger.info(f"  - Visualización comparativa guardada como: {overlay_mask_path.name}")

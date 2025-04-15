@@ -10,7 +10,6 @@ from mmengine.runner import Runner
 
 from mmseg.registry import RUNNERS
 
-
 def parse_args():
     parser = argparse.ArgumentParser(description='Train a segmentor')
     parser.add_argument('config', help='train config file path')
