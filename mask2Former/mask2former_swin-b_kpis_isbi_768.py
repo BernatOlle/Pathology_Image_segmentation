@@ -115,7 +115,7 @@ data_preprocessor = dict(
     type='SegDataPreProcessor')
 data_root = ''
 data_val_for_train = dict(
-    data_root='/mnt/work/datasets/BKidney/KPIS/KPIs24 Validation Data/Task1_patch_level',
+    data_root='/mnt/work/users/bernat.olle/Dataset',
     data_prefix=dict(
         img_path='validation',  # Las imágenes están directamente en los subdirectorios de data_root
         seg_map_path='validation'  # Las máscaras están en la misma estructura paralela
@@ -466,7 +466,7 @@ optimizer = dict(
     type='AdamW',
     weight_decay=0.05)
 ori_train_data = dict(
-    data_prefix=dict(img_path='KPIs24_Training_Data/Task1_patch_level/train'),
+    data_prefix=dict(img_path='/mnt/work/users/bernat.olle/Dataset/train'),
     data_root='',
     pipeline=[
         dict(type='LoadImageFromFile'),
@@ -518,7 +518,7 @@ resume = False
 stride_size = 576
 test_cfg = None
 test_data_as_val = dict(
-    data_root='/mnt/work/datasets/BKidney/KPIS/KPIs24 Testing Data/Task1_patch_level',
+    data_root='/mnt/work/users/bernat.olle/Dataset',
                 data_prefix=dict(
                     img_path='test',
                     seg_map_path='test'
@@ -535,7 +535,7 @@ train_dataloader = dict(
     dataset=dict(
         datasets=[
             dict(
-                data_root='/mnt/work/datasets/BKidney/KPIS/KPIs24 Training Data/Task1_patch_level',
+                data_root='/mnt/work/users/bernat.olle/Dataset',
                 data_prefix=dict(
                     img_path='train',  # Images are in [case]/[subcase]/img/
                     seg_map_path='train'  # Masks are in [case]/[subcase]/mask/
@@ -577,7 +577,7 @@ train_dataloader = dict(
                 ],
                 type='KPIsDataset'),
             dict(
-                data_root='/mnt/work/datasets/BKidney/KPIS/KPIs24 Validation Data/Task1_patch_level',
+                data_root='/mnt/work/users/bernat.olle/Dataset',
                 data_prefix=dict(
                     img_path='validation',
                     seg_map_path='validation'
@@ -660,7 +660,7 @@ val_cfg = dict(type='ValLoop')
 val_dataloader = dict(
     batch_size=2,
     dataset=dict(
-        data_root='/mnt/work/datasets/BKidney/KPIS/KPIs24 Testing Data/Task1_patch_level',
+        data_root='/mnt/work/users/bernat.olle/Dataset',
         data_prefix=dict(
             img_path='test',  # Images are in [data_root]/[case]/[subcase]/img/
             seg_map_path='test'  # Masks are in [data_root]/[case]/[subcase]/mask/

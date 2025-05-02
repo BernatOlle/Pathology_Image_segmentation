@@ -783,11 +783,11 @@ from mmseg.registry import TRANSFORMS
 
 @TRANSFORMS.register_module()
 class LoadKPIsAnnotations(BaseTransform):
-    """Cargador optimizado para imágenes JPG y máscaras PNG/JPG."""
+    """Cargador optimizado para imágenes PNG y máscaras PNG."""
 
     def __init__(self,
-                 input_img_ext='.jpg',
-                 mask_ext='.jpg',
+                 input_img_ext='.png',
+                 mask_ext='.png',
                  debug=False,
                  debug_samples=3,
                  debug_dir="mask_debug",
@@ -800,31 +800,21 @@ class LoadKPIsAnnotations(BaseTransform):
         self.debug_dir = Path(debug_dir)
         self._debug_count = 0
         
-        
-
     def transform(self, results):
         img_path = Path(results['img_path'])
         
         # Encontrar la ruta de la máscara simplemente reemplazando 'img' por 'mask'
-        # y añadiendo '_mask' al nombre del archivo
+        # y asegurando que se use la extensión PNG
         img_path_str = str(img_path)
-        mask_path = Path(img_path_str.replace('img', 'mask'))
-
-        
-        
-        
-        
+        mask_path = Path(img_path_str.replace('img', 'mask').replace('_img.png', '_mask.png'))
         
         # Verificar que la máscara existe
         if not mask_path.exists():
-            
             raise FileNotFoundError(f"No se encontró máscara para {img_path} en {mask_path}")
-        
         
         # Cargar máscara
         mask = cv2.imread(str(mask_path), cv2.IMREAD_GRAYSCALE)
         if mask is None:
-            
             raise ValueError(f"Error al cargar máscara: {mask_path}")
         
         # Procesamiento
@@ -838,7 +828,6 @@ class LoadKPIsAnnotations(BaseTransform):
             self._debug_count += 1
 
         return results
-
 
     def _process_mask(self, mask):
         """Binarización robusta"""

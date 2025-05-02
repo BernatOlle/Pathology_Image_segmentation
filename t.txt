@@ -1,0 +1,7 @@
+=====================================================================
+ SLURM_JOB_ID        = 2151177
+ SLURM_NODE          = gpic13
+ SLURM_JOB_PARTITION = gpi.compute
+ You can monitor your Job here: 
+ https://dash.tsc.upc.edu:3000/d/ediwvcrdqru9sf/slurm-job-details?orgId=1&var-partition=gpi&var-user=bernat.olle&var-slurmjobid_id=2151177&from=now-24h&to=now
+=====================================================================

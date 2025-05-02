@@ -116,7 +116,8 @@ data_preprocessor = dict(
 data_root = ''
 data_val_for_train = dict(
     data_prefix=dict(img_path='validation', seg_map_path='validation'),
-    data_root='/mnt/work/users/bernat.olle/Dataset',
+    data_root=
+    '/mnt/work/datasets/BKidney/KPIS/KPIs24 Validation Data/Task1_patch_level',
     pipeline=[
         dict(type='LoadImageFromFile'),
         dict(type='LoadKPIsAnnotations'),
@@ -195,7 +196,7 @@ model = dict(
         frozen_stages=-1,
         init_cfg=dict(
             checkpoint=
-            'https://download.openmmlab.com/mmsegmentation/v0.5/pretrain/swin/swin_base_patch4_window12_384_22k_20220317-e5c09f74.pth',
+            '/home/usuaris/imatge/bernat.olle/Pathology_Image_segmentation/mmsegmentation/mask2former_swin-b_kpis_768/iter_11310.pth',
             type='Pretrained'),
         mlp_ratio=4,
         num_heads=[
@@ -463,7 +464,7 @@ optimizer = dict(
     type='AdamW',
     weight_decay=0.05)
 ori_train_data = dict(
-    data_prefix=dict(img_path='/mnt/work/users/bernat.olle/Dataset/train'),
+    data_prefix=dict(img_path='KPIs24_Training_Data/Task1_patch_level/train'),
     data_root='',
     pipeline=[
         dict(type='LoadImageFromFile'),
@@ -516,7 +517,8 @@ stride_size = 576
 test_cfg = None
 test_data_as_val = dict(
     data_prefix=dict(img_path='test', seg_map_path='test'),
-    data_root='/mnt/work/users/bernat.olle/Dataset',
+    data_root=
+    '/mnt/work/datasets/BKidney/KPIS/KPIs24 Testing Data/Task1_patch_level',
     pipeline=[
         dict(type='LoadImageFromFile'),
         dict(type='LoadKPIsAnnotations'),
@@ -530,7 +532,8 @@ train_dataloader = dict(
         datasets=[
             dict(
                 data_prefix=dict(img_path='train', seg_map_path='train'),
-                data_root='/mnt/work/users/bernat.olle/Dataset',
+                data_root=
+                '/mnt/work/datasets/BKidney/KPIS/KPIs24 Training Data/Task1_patch_level',
                 pipeline=[
                     dict(type='LoadImageFromFile'),
                     dict(type='LoadKPIsAnnotations'),
@@ -570,7 +573,8 @@ train_dataloader = dict(
             dict(
                 data_prefix=dict(
                     img_path='validation', seg_map_path='validation'),
-                data_root='/mnt/work/users/bernat.olle/Dataset',
+                data_root=
+                '/mnt/work/datasets/BKidney/KPIS/KPIs24 Validation Data/Task1_patch_level',
                 pipeline=[
                     dict(type='LoadImageFromFile'),
                     dict(type='LoadKPIsAnnotations'),
@@ -650,7 +654,8 @@ val_dataloader = dict(
     batch_size=2,
     dataset=dict(
         data_prefix=dict(img_path='test', seg_map_path='test'),
-        data_root='/mnt/work/users/bernat.olle/Dataset',
+        data_root=
+        '/mnt/work/datasets/BKidney/KPIS/KPIs24 Testing Data/Task1_patch_level',
         pipeline=[
             dict(type='LoadImageFromFile'),
             dict(type='LoadKPIsAnnotations'),

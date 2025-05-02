@@ -14,15 +14,15 @@ test_pipeline = [
 ]
 
 # example: load SegFormer model
-config_path = '/home/usuaris/imatge/bernat.olle/wsi_glomerulus_seg/segformer/segformer_mit-b5_kpis_isbi_768.py'
-ckpt_path = '/home/usuaris/imatge/bernat.olle/wsi_glomerulus_seg/segformer/segformer_mit_b5_kpis_768_best_mDice.pth'
+config_path = '/home/usuaris/imatge/bernat.olle/Pathology_Image_segmentation/mask2Former/mask2former_swin-b_kpis_isbi_768.py'
+ckpt_path = '/home/usuaris/imatge/bernat.olle/Pathology_Image_segmentation/mmsegmentation/mask2former_swin-b_kpis_768/best_mDice_iter_10875.pth'
 model = init_model(config_path, ckpt_path)
 
 # assign test_pipeline
 model.cfg.test_pipeline = test_pipeline
 
 # inference
-img_data = cv2.imread('/home/usuaris/imatge/bernat.olle/wsi_glomerulus_seg/output_CROC_level0_imgS17_TINTEMORADO/slide-2023-02-18T08-17-59-R3-S17/slide-2023-02-18T08-17-59-R3-S17_patch0078_x38912_y118784.png', -1)
+img_data = cv2.imread('/mnt/work/datasets/BKidney/KPIS/KPIs24 Testing Data/Task1_patch_level/test/56Nx/12-299/img/12-299_37_11264_1024_img.jpg', -1)
 pred_res = inference_model(model, img_data)
 
 # get the predicted mask
