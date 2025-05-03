@@ -6,9 +6,13 @@ import java.awt.image.BufferedImage
 import java.awt.Color
 import java.awt.geom.AffineTransform
 import java.awt.Rectangle
+import java.awt.image.Raster
 
-// 1. Definir la ruta base del dataset
+// 1. Definir la ruta base del dataset y opciones
 def basePath = "/mnt/work/users/bernat.olle/Dataset"
+
+// Opción para guardar solo parches con anotaciones
+def saveOnlyAnnotatedPatches = false   // Cambiar a false para guardar todos los parches en la región de interés
 
 // 2. Obtener nombre base del archivo .mrxs (sin extensión)
 def imageName = GeneralTools.getNameWithoutExtension(QP.getCurrentServer().getMetadata().getName())
@@ -71,7 +75,7 @@ annotations.each { annotation ->
     }
 }
 
-// 10. Añadir un margen alrededor del rectángulo (20% del tamaño del rectángulo)
+// 10. Añadir un margen alrededor del rectángulo (8% del tamaño del rectángulo)
 def marginPercentage = 0.08
 def rectWidth = maxX - minX
 def rectHeight = maxY - minY
@@ -100,8 +104,36 @@ def endPatchY = Math.ceil(maxY / stride) as int
 
 println "Procesando parches desde (${startPatchX}, ${startPatchY}) hasta (${endPatchX}, ${endPatchY})"
 
-// Contador para parches guardados
+// Contador para parches guardados y descartados
 def savedPatches = 0
+def discardedWhitePatches = 0
+def discardedNoAnnotationPatches = 0
+
+// Función para determinar si una imagen es mayoritariamente blanca (umbral del 90%)
+def isMostlyWhite(BufferedImage img, double threshold = 0.9) {
+    int whiteThreshold = 230  // Valor para considerar un píxel como "blanco"
+    int whitePixels = 0
+    int totalPixels = img.getWidth() * img.getHeight()
+    
+    // Obtener datos de píxeles
+    Raster raster = img.getRaster()
+    int[] pixel = new int[3]  // Para RGB
+    
+    // Contar píxeles blancos
+    for (int y = 0; y < img.getHeight(); y++) {
+        for (int x = 0; x < img.getWidth(); x++) {
+            raster.getPixel(x, y, pixel)
+            // Si los tres canales (R,G,B) tienen valores altos, consideramos el píxel como blanco
+            if (pixel[0] >= whiteThreshold && pixel[1] >= whiteThreshold && pixel[2] >= whiteThreshold) {
+                whitePixels++
+            }
+        }
+    }
+    
+    // Calcular el porcentaje de píxeles blancos
+    double whitePercentage = (double)whitePixels / totalPixels
+    return whitePercentage >= threshold
+}
 
 // 12. Generar parches y máscaras solo para el área de interés
 for (int patchY = startPatchY; patchY <= endPatchY; patchY++) {
@@ -125,12 +157,17 @@ for (int patchY = startPatchY; patchY <= endPatchY; patchY++) {
                     // Crear RegionRequest para este parche
                     def request = RegionRequest.createInstance(server.getPath(), 1, x, y, patchSize, patchSize)
                     
-                    // Guardar imagen del parche
+                    // Leer la imagen del parche
                     def imgPatch = server.readRegion(request)
-                    def imgFile = new File(imgDir, "${imageName}_${x}_${y}_img.png")
-                    ImageIO.write(imgPatch, "PNG", imgFile)
                     
-                    // Crear máscara para este parche
+                    // Verificar si la imagen es mayoritariamente blanca (90% o más)
+                    if (isMostlyWhite(imgPatch, 0.9)) {
+                        discardedWhitePatches++
+                        println "Descartado parche ${patchX},${patchY} (${x},${y}) - Mayoritariamente blanco (>90%)"
+                        continue  // Saltar al siguiente parche
+                    }
+                    
+                    // Crear máscara para este parche y verificar si contiene anotaciones
                     def mask = new BufferedImage(patchSize, patchSize, BufferedImage.TYPE_BYTE_GRAY)
                     def g2d = mask.createGraphics()
                     g2d.setColor(Color.WHITE)
@@ -159,15 +196,25 @@ for (int patchY = startPatchY; patchY <= endPatchY; patchY++) {
                     
                     g2d.dispose()
                     
-                    // Guardar la máscara (incluso si no tiene anotaciones)
-                    def maskFile = new File(maskDir, "${imageName}_${x}_${y}_mask.png")
-                    ImageIO.write(mask, "PNG", maskFile)
-                    
-                    savedPatches++
-                    if (hasAnnotations) {
-                        println "Guardado parche ${patchX},${patchY} (${x},${y}) - Con anotaciones"
+                    // Verificar si debemos guardar este parche según la opción saveOnlyAnnotatedPatches
+                    if (!saveOnlyAnnotatedPatches || hasAnnotations) {
+                        // Guardar la imagen del parche
+                        def imgFile = new File(imgDir, "${imageName}_${x}_${y}_img.png")
+                        ImageIO.write(imgPatch, "PNG", imgFile)
+                        
+                        // Guardar la máscara
+                        def maskFile = new File(maskDir, "${imageName}_${x}_${y}_mask.png")
+                        ImageIO.write(mask, "PNG", maskFile)
+                        
+                        savedPatches++
+                        if (hasAnnotations) {
+                            println "Guardado parche ${patchX},${patchY} (${x},${y}) - Con anotaciones"
+                        } else {
+                            println "Guardado parche ${patchX},${patchY} (${x},${y}) - Sin anotaciones (dentro del área de interés)"
+                        }
                     } else {
-                        println "Guardado parche ${patchX},${patchY} (${x},${y}) - Sin anotaciones (dentro del área de interés)"
+                        println "Descartado parche ${patchX},${patchY} (${x},${y}) - Sin anotaciones (opción saveOnlyAnnotatedPatches=true)"
+                        discardedNoAnnotationPatches++
                     }
                 }
             } catch (Exception e) {
@@ -178,4 +225,9 @@ for (int patchY = startPatchY; patchY <= endPatchY; patchY++) {
     }
 }
 
-print "¡Procesamiento completado! Se guardaron ${savedPatches} parches en la región de interés: ${basePath}/${ratonID}/"
+println "¡Procesamiento completado!"
+println "Se guardaron ${savedPatches} parches en la región de interés: ${basePath}/${ratonID}/${seccionID}"
+println "Se descartaron ${discardedWhitePatches} parches por ser mayoritariamente blancos (>90%)"
+if (saveOnlyAnnotatedPatches) {
+    println "Se descartaron ${discardedNoAnnotationPatches} parches por no contener anotaciones (opción saveOnlyAnnotatedPatches=true)"
+}
