@@ -1,0 +1,24 @@
+=====================================================================
+ SLURM_JOB_ID        = 2159154
+ SLURM_NODE          = gpic09
+ SLURM_JOB_PARTITION = gpi.compute
+ You can monitor your Job here: 
+ https://dash.tsc.upc.edu:3000/d/ediwvcrdqru9sf/slurm-job-details?orgId=1&var-partition=gpi&var-user=bernat.olle&var-slurmjobid_id=2159154&from=now-24h&to=now
+=====================================================================
+Inicializando modelo Mask2Former...
+Loads checkpoint by local backend from path: /home/usuaris/imatge/bernat.olle/Pathology_Image_segmentation/mmsegmentation/mask2former_swin-b_kpis_768/best_mDice_iter_6000.pth
+Modelo cargado correctamente
+🔍 Encontrados 1 archivos MRXS
+Detectando región de interés (ROI)...
+ROI detectado: x=8768, y=108692, ancho=34868, alto=21600
+ROI guardado como imagen 1024x1024 en /mnt/work/users/bernat.olle/Results/R3/S20/slide-2023-02-18T08-21-34-R3-S20_ROI_1024x1024.png
+
+Procesando slide-2023-02-18T08-21-34-R3-S20 (ROI: 34868x21600 en nivel 0)
+Filtros: extremos > 95.0% | varianza < 10.0
+Imagen compuesta guardada en /mnt/work/users/bernat.olle/Results/R3/S20/slide-2023-02-18T08-21-34-R3-S20_glomeruli_composite.png con dimensiones 34868x21600
+Procesando 115 máscaras para exportar a QuPath...
+Exportación a QuPath completada: 189 ROIs de glomérulos guardados en /mnt/work/users/bernat.olle/Results/R3/S20/qupath/slide-2023-02-18T08-21-34-R3-S20_glomeruli.qpdata
+Archivo de proyecto QuPath generado en /mnt/work/users/bernat.olle/Results/R3/S20/qupath/slide-2023-02-18T08-21-34-R3-S20.qpproj
+Procesamiento completo. Parches válidos: 115 | Rechazados: 55
+
+✅ Procesamiento completado

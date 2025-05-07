@@ -157,12 +157,12 @@ dataset_type = 'KPIsDataset'
 default_hooks = dict(
     checkpoint=dict(
         by_epoch=False,
-        interval=435,
+        interval=1000,
         max_keep_ckpts=3,
         save_best='mDice',
         type='CheckpointHook'),
     logger=dict(interval=100, log_metric_by_epoch=False, type='LoggerHook'),
-    visualization=dict(draw=True, interval=435, type='SegVisualizationHook'))
+    visualization=dict(draw=True, interval=1000, type='SegVisualizationHook'))
 default_scope = 'mmseg'
 depths = [
     2,
@@ -198,7 +198,7 @@ model = dict(
         frozen_stages=-1,
         init_cfg=dict(
             checkpoint=
-            'https://download.openmmlab.com/mmsegmentation/v0.5/pretrain/swin/swin_base_patch4_window12_384_22k_20220317-e5c09f74.pth',
+            '/home/usuaris/imatge/bernat.olle/swin_base_patch4_window12_384_22k_20220317-e5c09f74.pth',
             type='Pretrained'),
         mlp_ratio=4,
         num_heads=[
@@ -529,7 +529,7 @@ test_data_as_val = dict(
         dict(type='PackSegInputs'),
     ],
     type='KPIsDataset')
-train_cfg = dict(max_iters=42278, type='IterBasedTrainLoop', val_interval=435)
+train_cfg = dict(max_iters=42278, type='IterBasedTrainLoop', val_interval=1000)
 train_dataloader = dict(
     batch_size=2,
     dataset=dict(
@@ -679,7 +679,7 @@ val_evaluator = dict(
         'mDice',
     ], type='IoUMetric')
 val_freq = 0.5
-val_interval = 435
+val_interval = 1000
 val_pipeline = [
     dict(type='LoadImageFromFile'),
     dict(type='LoadKPIsAnnotations'),

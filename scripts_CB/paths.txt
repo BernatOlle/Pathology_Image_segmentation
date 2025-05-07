@@ -1,1 +1,17 @@
-/mnt/work/datasets/BKidney/KPIS/KPIs24 Training Data/Task1_patch_level/train/NEP25/08_368_02/img/08_368_02_56_14336_2048_img.jpg
+srun --gres=gpu:4,gpumem:16G --mem 64G --cpus-per-task=8 --time=24:00:00 python tools/train.py /home/usuaris/imatge/bernat.olle/Pathology_Image_segmentation/mask2Former/mask2former_swin-b_kpis_isbi_768.py >t.txt
+
+
+
+srun --gres=gpu:1,gpumem:16G --mem 32G  --time=24:00:00  python parcher_mrxs.py -i /mnt/work/datasets/BKidney/CROC/slide-2023-02-18T08-21-34-R3-S20.mrxs
+
+
+srun --gres=gpu:1 --mem=32G --cpus-per-task=8 --time=02:00:00 python parcher_mrxs.py --input_dir /mnt/work/datasets/BKidney/CROC/slide-2023-02-18T08-21-34-R3-S20.mrxs --patch_size 2048 --save_roi --skip_background
+srun --gres=gpu:1 \
+     --mem=32G \
+     --cpus-per-task=8 \
+     --time=04:00:00 \
+     python parcher_mrxs.py --input_dir /mnt/work/datasets/BKidney/CROC/slide-2023-02-18T08-21-34-R3-S20.mrxs --patch_size 2048 --save_roi --skip_background
+
+
+
+srun --gres=gpu:1 --cpus-per-task=4 --mem=16G --time=24:00:00 python parcher_mrxs.py --input_dir /mnt/work/datasets/BKidney/CROC/slide-2023-02-18T08-21-34-R3-S20.mrxs --patch_size 2048  --skip_background --save_roi 
