@@ -15,3 +15,6 @@ srun --gres=gpu:1 \
 
 
 srun --gres=gpu:1 --cpus-per-task=4 --mem=16G --time=24:00:00 python parcher_mrxs.py --input_dir /mnt/work/datasets/BKidney/CROC/slide-2023-02-18T08-21-34-R3-S20.mrxs --patch_size 2048  --skip_background --save_roi 
+
+
+srun --gres=gpu:1 --mem 32G python scripts_CB/test/test_performance.py --test_dir /mnt/work/users/bernat.olle/Dataset/test/ --output_dir /home/usuaris/imatge/constanza.elfarkh/Pathology_Image_segmentation/scripts_CB/test --visualize
