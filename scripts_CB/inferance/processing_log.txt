@@ -1,0 +1,24 @@
+2025-05-08 19:42:46,241 - INFO - Full slide dimensions: 87904 x 192960
+2025-05-08 19:42:46,242 - INFO - Tissue bounds: 32160 x 23584 at position (8576, 107200)
+2025-05-08 19:42:46,242 - INFO - Directorio de salida: /mnt/work/users/bernat.olle/Results/R3/S20
+2025-05-08 19:42:46,915 - INFO - 
+Procesando slide-2023-02-18T08-21-34-R3-S20 (ROI: 32160x23584 en nivel 0)
+2025-05-08 19:42:46,915 - INFO - Filtros: extremos > 95.0% | varianza < 10.0
+2025-05-08 19:42:46,916 - INFO - ROI en nivel 0: 8576, 107200, 32160, 23584
+2025-05-08 19:42:46,916 - INFO - Procesando aproximadamente 768 parches con stride=1024
+2025-05-08 20:12:40,936 - INFO - Full slide dimensions: 87904 x 192960
+2025-05-08 20:12:40,936 - INFO - Tissue bounds: 32160 x 23584 at position (17152, 66464)
+2025-05-08 20:12:40,936 - INFO - Directorio de salida: /mnt/work/users/bernat.olle/Results/R3/S1
+2025-05-08 20:12:42,649 - INFO - 
+Procesando slide-2023-02-18T07-55-10-R3-S1 (ROI: 32160x23584 en nivel 0)
+2025-05-08 20:12:42,650 - INFO - Filtros: extremos > 95.0% | varianza < 10.0
+2025-05-08 20:12:42,650 - INFO - ROI en nivel 0: 17152, 66464, 32160, 23584
+2025-05-08 20:12:42,650 - INFO - Procesando aproximadamente 768 parches con stride=1024
+2025-05-08 20:34:15,884 - INFO - 
+Generando imagen compuesta de la ROI completa...
+2025-05-08 20:34:34,725 - INFO - Exportando a formato GeoJSON para QuPath...
+2025-05-08 20:34:37,522 - INFO - Procesamiento completo. Parches válidos: 768 | Rechazados: 0
+2025-05-08 21:25:50,241 - INFO - 
+Generando imagen compuesta de la ROI completa...
+2025-05-08 21:26:08,251 - INFO - Exportando a formato GeoJSON para QuPath...
+2025-05-08 21:26:10,905 - INFO - Procesamiento completo. Parches válidos: 768 | Rechazados: 0

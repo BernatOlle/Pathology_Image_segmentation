@@ -16,16 +16,23 @@ import base64
 import zlib
 import uuid
 import skimage.measure
+import time  # Añadido para medición de tiempo
+from datetime import timedelta, datetime  # Add this line
+from logger import setup_logger, get_logger
 
 # Import from mmseg and mmengine instead of mmcv
 from mmseg.apis import init_model, inference_model
 from mmengine.registry import init_default_scope
 
+
+
+
 def parse_args():
     parser = argparse.ArgumentParser(
         description='Recortar imágenes médicas MRXS y segmentar glomérulos'
     )
-    parser.add_argument('--input_dir', type=str, required=True, help='Archivo MRXS o directorio con imágenes MRXS')
+    parser.add_argument('--input_dir', type=str, required=True, 
+                        help='Ruta al archivo MRXS (ej: /mnt/work/datasets/BKidney/CROC/slide-2023-02-18T08-00-55-R3-S6.mrxs)')
     parser.add_argument('--patch_size', type=int, default=2048, help='Tamaño de los recortes (default: 2048)')
     parser.add_argument('--stride', type=int, default=1024, help='Stride (paso) para el recorte (default: 1024)')
     parser.add_argument('--level', type=int, default=0, help='Nivel de zoom para procesar (default: 0)')
@@ -34,17 +41,23 @@ def parse_args():
     parser.add_argument('--denoise', action='store_true', help='Aplicar reducción de ruido')
     parser.add_argument('--tissue_threshold', type=float, default=0.8, help='Umbral para detección de tejido (0-1)')
     parser.add_argument('--skip_background', action='store_true', help='Ignorar parches con predominio de fondo')
+    parser.add_argument('--background_threshold', type=float, default=0.85, 
+                        help='Umbral para considerar un parche como fondo (0-1)')
+    parser.add_argument('--extreme_pixel_ratio', type=float, default=0.9, 
+                        help='Proporción de píxeles extremos para considerar un parche como fondo (0-1)')
     parser.add_argument('--save_roi', action='store_true', help='Guardar la ROI como una imagen de 1024x1024')
     parser.add_argument('--config_path', type=str, 
                         default='/home/usuaris/imatge/bernat.olle/Pathology_Image_segmentation/mask2Former/mask2former_swin-b_kpis_isbi_768.py', 
                         help='Ruta del archivo de configuración del modelo')
     parser.add_argument('--ckpt_path', type=str, 
-                        default='/home/usuaris/imatge/bernat.olle/Pathology_Image_segmentation/mmsegmentation/mask2former_swin-b_kpis_768/best_mDice_iter_6000.pth', 
+                        default='/home/usuaris/imatge/bernat.olle/Pathology_Image_segmentation/mmsegmentation/mask2former_swin-b_kpis_768/best_mDice_iter_17000.pth', 
                         help='Ruta del archivo de checkpoint del modelo')
-    parser.add_argument('--save_original', action='store_true', help='Guardar parches originales además de las máscaras')
+    parser.add_argument('--save_original', action='store_true', help='Guardar parches originales')
+    parser.add_argument('--save_mask', action='store_true', help='Guardar máscaras de segmentación')
+    parser.add_argument('--save_overlay', action='store_true', help='Guardar imágenes con overlay')
+    parser.add_argument('--save_geojson', action='store_true', help='Guardar máscaras en formato GeoJSON para QuPath')
     parser.add_argument('--overlay_alpha', type=float, default=0.5, help='Transparencia de la máscara sobre la imagen original (0-1)')
     parser.add_argument('--mask_color', type=str, default='blue', help='Color para la máscara (red, green, blue, yellow, magenta, cyan)')
-    parser.add_argument('--export_qupath', action='store_true', help='Exportar las máscaras a formato QuPath (.qpdata)')
     return parser.parse_args()
 
 def detect_tissue_mask(img, threshold=0.8):
@@ -53,6 +66,7 @@ def detect_tissue_mask(img, threshold=0.8):
     Devuelve una máscara binaria donde 1=tejido, 0=fondo.
     """
     # Convertir a escala de grises
+    logger = get_logger()
     if len(img.shape) == 3:
         gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
     else:
@@ -93,6 +107,7 @@ def is_extreme_image(patch_array, extreme_threshold=0.95, min_variance=10):
     o muy poca varianza
     """
     # Calcular varianza global
+    logger = get_logger()
     if patch_array.std() < min_variance:
         return True
     
@@ -121,6 +136,7 @@ def detect_roi(slide, tissue_threshold=0.5, preview_level=2):
         tuple: (x_min, y_min, width, height) de la región de interés en coordenadas de nivel 0
     """
     # Asegurarnos de que el nivel de vista previa existe
+    logger = get_logger()
     max_level = min(preview_level, len(slide.level_dimensions) - 1)
     
     # Obtener una versión de baja resolución de la imagen completa
@@ -137,7 +153,7 @@ def detect_roi(slide, tissue_threshold=0.5, preview_level=2):
     
     # Si no se detectan componentes, usar toda la imagen
     if len(component_sizes) == 0:
-        print("No se detectaron componentes de tejido, usando toda la imagen")
+        logger.info("No se detectaron componentes de tejido, usando toda la imagen")
         return 0, 0, slide.level_dimensions[0][0], slide.level_dimensions[0][1]
     
     # Encontrar los índices de los componentes más grandes (potencialmente los riñones)
@@ -150,7 +166,7 @@ def detect_roi(slide, tissue_threshold=0.5, preview_level=2):
     # Encontrar el rectángulo delimitador (bounding box) de los componentes
     y_indices, x_indices = np.where(kidney_mask)
     if len(y_indices) == 0 or len(x_indices) == 0:
-        print("No se detectaron regiones de tejido válidas, usando toda la imagen")
+        logger.info("No se detectaron regiones de tejido válidas, usando toda la imagen")
         return 0, 0, slide.level_dimensions[0][0], slide.level_dimensions[0][1]
     
     # Calcular coordenadas del rectángulo delimitador
@@ -173,7 +189,7 @@ def detect_roi(slide, tissue_threshold=0.5, preview_level=2):
     width_level0 = int((x_max - x_min) * downsample_factor)
     height_level0 = int((y_max - y_min) * downsample_factor)
     
-    print(f"ROI detectado: x={x_min_level0}, y={y_min_level0}, ancho={width_level0}, alto={height_level0}")
+    logger.info(f"ROI detectado: x={x_min_level0}, y={y_min_level0}, ancho={width_level0}, alto={height_level0}")
     
     return x_min_level0, y_min_level0, width_level0, height_level0
 
@@ -189,6 +205,7 @@ def save_roi_image(slide, x_roi, y_roi, width_roi, height_roi, output_path, targ
     """
     # Determinar el nivel óptimo para leer la ROI
     # Queremos un nivel que nos dé una imagen similar al tamaño objetivo
+    logger = get_logger()
     optimal_level = 0
     min_difference = float('inf')
     
@@ -241,7 +258,7 @@ def save_roi_image(slide, x_roi, y_roi, width_roi, height_roi, output_path, targ
     
     # Guardar la imagen
     canvas.save(output_path)
-    print(f"ROI guardado como imagen {target_size[0]}x{target_size[1]} en {output_path}")
+    logger.info(f"ROI guardado como imagen {target_size[0]}x{target_size[1]} en {output_path}")
 
 def initialize_model(config_path, ckpt_path, device='cuda:0'):
     """
@@ -249,6 +266,7 @@ def initialize_model(config_path, ckpt_path, device='cuda:0'):
     usando mmseg y mmengine
     """
     # Inicializar el ámbito predeterminado para mmseg
+    logger = get_logger()
     init_default_scope('mmseg')
     
     # Cargar el modelo
@@ -270,6 +288,7 @@ def get_glomeruli_mask(result, target_height, target_width):
     Convierte el resultado de la inferencia en una máscara binaria de glomérulos
     """
     # Obtener los logits de segmentación
+    logger = get_logger()
     raw_logits = result.seg_logits.data
     
     # Obtener la clase con mayor probabilidad
@@ -352,10 +371,10 @@ def create_overlay_image(original_image, mask, alpha=0.5, color_name='blue'):
     return overlay_rgb
 
 def save_composite_mask(masks_dict, original_dict, output_path, roi_dimensions, 
-                       alpha=0.5, color_name='blue'):
+                      alpha=0.5, color_name='blue', target_size=(1024, 1024)):
     """
     Guarda una imagen compuesta de todas las máscaras de glomérulos superpuestas a
-    las imágenes originales, con el tamaño exacto de la ROI y sin márgenes entre parches.
+    las imágenes originales, redimensionada a 1024x1024 manteniendo el aspect ratio.
     
     Args:
         masks_dict: Diccionario con las coordenadas (x, y) como claves y las máscaras como valores
@@ -364,367 +383,669 @@ def save_composite_mask(masks_dict, original_dict, output_path, roi_dimensions,
         roi_dimensions: Tupla (width, height) con las dimensiones de la ROI original
         alpha: Nivel de transparencia de la máscara
         color_name: Color de la máscara superpuesta
+        target_size: Tamaño objetivo para redimensionar (default 1024x1024)
     """
     # Extraer las dimensiones de la ROI
+    logger = get_logger()
     roi_width, roi_height = roi_dimensions
     
+    # Verificar dimensiones válidas
+    if roi_width <= 0 or roi_height <= 0:
+        logger.info(f"Error: Dimensiones inválidas {roi_width}x{roi_height}")
+        return
+
     # Crear una imagen del tamaño exacto de la ROI para la composición
     composite = np.zeros((roi_height, roi_width, 3), dtype=np.uint8)
     
-    if masks_dict:
-        # Obtener el tamaño de los parches
-        first_mask = next(iter(masks_dict.values()))
-        patch_height, patch_width = first_mask.shape[:2]
-        
-        # Encontrar las coordenadas mínimas para usar como origen (0,0) en la imagen compuesta
-        min_x = min([x for x, y in masks_dict.keys()])
-        min_y = min([y for x, y in masks_dict.keys()])
-        
-        # Colocar cada parche con su máscara superpuesta en la posición exacta sin escalar
-        for (x, y), mask in masks_dict.items():
-            if (x, y) in original_dict:
-                # Calcular posición relativa al origen de la ROI
-                rel_x = x - min_x
-                rel_y = y - min_y
-                
-                # Obtener la imagen original correspondiente
-                original = original_dict[(x, y)]
-                
-                # Crear la imagen con la máscara superpuesta
-                overlay = create_overlay_image(original, mask, alpha, color_name)
-                
-                # Asegurarse de que no excede los límites de la imagen compuesta
-                y_end = min(rel_y + patch_height, roi_height)
-                x_end = min(rel_x + patch_width, roi_width)
-                
-                # Calcular cuánto del parche se va a copiar
-                patch_y_end = y_end - rel_y
-                patch_x_end = x_end - rel_x
-                
-                # Copiar la porción de la imagen con máscara a la composición
-                try:
-                    if rel_x < roi_width and rel_y < roi_height:
-                        composite[rel_y:y_end, rel_x:x_end] = overlay[:patch_y_end, :patch_x_end]
-                except Exception as e:
-                    print(f"Error al componer imagen en posición ({rel_x},{rel_y}): {e}")
+    # Crear un mapa de cobertura para rastrear qué áreas de la ROI han sido cubiertas
+    coverage_map = np.zeros((roi_height, roi_width), dtype=bool)
     
-    # Guardar la imagen compuesta
-    cv2.imwrite(str(output_path), composite)
-    print(f"Imagen compuesta guardada en {output_path} con dimensiones {roi_width}x{roi_height}")
+    if masks_dict:
+        try:
+            # Obtener el tamaño de los parches
+            first_mask = next(iter(masks_dict.values()))
+            patch_height, patch_width = first_mask.shape[:2]
+            logger.info(f"Tamaño de parche: {patch_width}x{patch_height}")
+            
+            # Identificar las coordenadas mínimas para establecer el origen
+            all_coords = list(masks_dict.keys())
+            min_x = min(x for x, y in all_coords)
+            min_y = min(y for x, y in all_coords)
+            logger.info(f"Origen de coordenadas relativas: ({min_x}, {min_y})")
+            
+            # Para depuración: Mostramos todas las coordenadas disponibles
+            logger.info(f"Disponemos de {len(all_coords)} parches en las siguientes coordenadas:")
+            for i, (x, y) in enumerate(sorted(all_coords)):
+                if i < 10:  # Limitamos a mostrar solo los primeros 10
+                    logger.info(f"  Parche en ({x}, {y})")
+                elif i == 10:
+                    logger.info("  ...")
+            
+            # Colocar cada parche con su máscara superpuesta
+            for (x, y), mask in masks_dict.items():
+                if (x, y) in original_dict:
+                    # Calcular posición relativa dentro de la ROI
+                    rel_x = x - min_x
+                    rel_y = y - min_y
+                    
+                    # Verificar si la posición está dentro de los límites
+                    if rel_x >= 0 and rel_y >= 0 and rel_x < roi_width and rel_y < roi_height:
+                        original = original_dict[(x, y)]
+                        overlay = create_overlay_image(original, mask, alpha, color_name)
+                        
+                        # Calcular límites efectivos (asegurando que no se salga de los bordes)
+                        y_end = min(rel_y + patch_height, roi_height)
+                        x_end = min(rel_x + patch_width, roi_width)
+                        patch_y_end = y_end - rel_y
+                        patch_x_end = x_end - rel_x
+                        
+                        # Colocar el parche en la posición correcta
+                        if x_end > rel_x and y_end > rel_y:  # Verificar que el parche tiene área válida
+                            composite[rel_y:y_end, rel_x:x_end] = overlay[:patch_y_end, :patch_x_end]
+                            coverage_map[rel_y:y_end, rel_x:x_end] = True
+                            
+                            # Para depuración: Mostrar información sobre la colocación
+                            if rel_x < 100 and rel_y < 100:  # Solo para los primeros parches
+                                logger.info(f"Colocado parche ({x},{y}) en posición relativa ({rel_x},{rel_y}) hasta ({x_end},{y_end})")
+            
+            # Verificar cobertura e informar
+            coverage_percent = np.sum(coverage_map) / (roi_height * roi_width) * 100
+            logger.info(f"Cobertura de la ROI: {coverage_percent:.2f}%")
+            
+            # Identificar regiones sin cubrir (para depuración)
+            if coverage_percent < 100:
+                # Encontrar regiones no cubiertas
+                from scipy import ndimage
+                labeled, num_regions = ndimage.label(~coverage_map)
+                if num_regions > 0:
+                    region_sizes = np.bincount(labeled.ravel())[1:] if num_regions > 0 else []
+                    logger.info(f"Regiones sin cubrir: {num_regions}")
+                    # Mostrar las 5 regiones más grandes sin cubrir
+                    for i in np.argsort(region_sizes)[-5:]:
+                        region_size = region_sizes[i]
+                        if region_size > 100:  # Solo reportar regiones significativas
+                            region_mask = labeled == (i + 1)
+                            y_indices, x_indices = np.where(region_mask)
+                            min_x_region = np.min(x_indices)
+                            min_y_region = np.min(y_indices)
+                            max_x_region = np.max(x_indices)
+                            max_y_region = np.max(y_indices)
+                            logger.info(f"  Región sin cubrir: ({min_x_region},{min_y_region}) - ({max_x_region},{max_y_region}), tamaño: {region_size} píxeles")
+                
+        except Exception as e:
+            logger.info(f"Error al crear composición: {e}")
+            import traceback
+            traceback.logger.info_exc()
+            return
+
+    # Verificar que la imagen compuesta es válida antes de redimensionar
+    if composite.size == 0 or np.all(composite == 0):
+        logger.info("Error: Imagen compuesta vacía o completamente negra")
+        return
+
+    # Obtener dimensiones actuales
+    h, w = composite.shape[:2]
+    
+    # Calcular factor de escala manteniendo aspect ratio
+    try:
+        scale = min(target_size[0]/w, target_size[1]/h)
+        new_w, new_h = int(w * scale), int(h * scale)
+        
+        # Redimensionar usando interpolación de área
+        resized = cv2.resize(composite, (new_w, new_h), interpolation=cv2.INTER_AREA)
+        
+        # Crear imagen final con fondo negro
+        final_image = np.zeros((target_size[1], target_size[0], 3), dtype=np.uint8)
+        
+        # Centrar la imagen redimensionada
+        x_offset = (target_size[0] - new_w) // 2
+        y_offset = (target_size[1] - new_h) // 2
+        final_image[y_offset:y_offset+new_h, x_offset:x_offset+new_w] = resized
+        
+        # Guardar la imagen compuesta
+        cv2.imwrite(str(output_path), final_image)
+        logger.info(f"Imagen compuesta guardada en {output_path} ({w}x{h} -> {target_size[0]}x{target_size[1]})")
+        
+    except Exception as e:
+        logger.info(f"Error al redimensionar imagen: {e}")
+        import traceback
+        traceback.logger.info_exc()
+
+def is_background_patch(patch_array, background_threshold=0.85, extreme_pixel_ratio=0.9):
+    """
+    Determina si un parche es mayoritariamente fondo (blanco, negro o mezcla de ambos).
+    
+    Args:
+        patch_array: Numpy array de la imagen en formato RGB
+        background_threshold: Umbral para considerar un parche como fondo (0-1)
+        extreme_pixel_ratio: Proporción de píxeles extremos para considerar como blanco/negro
+    
+    Returns:
+        bool: True si el parche es mayoritariamente fondo, False en caso contrario
+    """
+    logger = get_logger()
+    
+    if patch_array is None or patch_array.size == 0:
+        return True
+    
+    # Convertir a escala de grises para análisis
+    if len(patch_array.shape) == 3:
+        gray = cv2.cvtColor(patch_array, cv2.COLOR_RGB2GRAY)
+    else:
+        gray = patch_array.copy()
+    
+    # Calcular histograma
+    hist = cv2.calcHist([gray], [0], None, [256], [0, 256])
+    hist = hist.flatten() / gray.size
+    
+    # Calcular proporción de píxeles extremos (cercanos a negro o blanco)
+    dark_pixels = sum(hist[:25])    # Píxeles en el rango 0-24
+    light_pixels = sum(hist[230:])  # Píxeles en el rango 230-255
+    extreme_pixels = dark_pixels + light_pixels
+    
+    # Comprobar si mayoría de píxeles son negros o blancos
+    if extreme_pixels > extreme_pixel_ratio:
+        return True
+    
+    # Analizar varianza y distribución de píxeles
+    mean_val = gray.mean()
+    std_val = gray.std()
+    
+    # Calcular porcentaje de píxeles dentro del rango cercano a la media
+    # (esto identifica imágenes con poca variación tonal)
+    lower_bound = max(0, mean_val - std_val)
+    upper_bound = min(255, mean_val + std_val)
+    
+    # Crear máscara para píxeles en ese rango
+    mask = (gray >= lower_bound) & (gray <= upper_bound)
+    pixels_in_range = np.sum(mask) / gray.size
+    
+    # Si un alto porcentaje de píxeles están en un rango estrecho alrededor de la media,
+    # probablemente sea un fondo uniforme
+    if pixels_in_range > background_threshold:
+        return True
+    
+    # Opcionalmente: detectar también patrones repetitivos típicos de fondo
+    # (como cuadrículas o patrones de escáner)
+    
+    return False
+
+
+def save_level_image(slide, output_dir, level=7, target_size=None, bounds_x=0, bounds_y=0, bounds_width=None, bounds_height=None,slide_name=None):
+    logger = get_logger()
+    level_downsample = slide.level_downsamples[level]
+    region_width = int(bounds_width / level_downsample)
+    region_height = int(bounds_height / level_downsample)
+    region = slide.read_region(
+        (bounds_x, bounds_y),  # Start at the bounds offset
+        level,                  # Pyramid level
+        (region_width, region_height)  # Size to read
+    )
+    
+    # Convert to RGB
+    region_rgb = region.convert('RGB')
+    
+    # Save the image
+    output_path = os.path.join(output_dir, f"{slide_name}_level{level}.png")
+    region_rgb.save(output_path)
+    logger.info(f"\nSaved level {level} image to: {output_path}")
+    
+    # Save a thumbnail version if it's a large image
+    if max(region_width, region_height) > 1024:
+        thumb = region_rgb.copy()
+        thumb.thumbnail((1024, 1024))
+        thumb_path = os.path.join(output_dir, f"{slide_name}_level{level}_thumbnail.png")
+        thumb.save(thumb_path)
+        logger.info(f"Saved thumbnail to: {thumb_path}")
+
 
 def extract_patches_and_predict(slide_path, model, patch_size=2048, level=0, 
                               extreme_threshold=0.95, min_variance=10,
                               denoise=False, tissue_threshold=0.8,
                               skip_background=False, save_roi=False,
-                              save_original=False, overlay_alpha=0.5,
-                              mask_color='blue', export_qupath=True):
+                              save_original=False, save_mask=False, 
+                              save_overlay=False, save_geojson=False,
+                              overlay_alpha=0.5, mask_color='blue',
+                              background_threshold=0.85, extreme_pixel_ratio=0.9):
+    logger = get_logger()
     try:
         # Abrir la imagen con OpenSlide
         slide = openslide.OpenSlide(slide_path)
         slide_name = Path(slide_path).stem
+        
+
+        # Get the full slide dimensions
+        full_width = slide.dimensions[0]
+        full_height = slide.dimensions[1]
+
+        # Get the bounds/region properties (this is what QuPath is using)
+        bounds_x = int(slide.properties.get('openslide.bounds-x', 0))
+        bounds_y = int(slide.properties.get('openslide.bounds-y', 0))
+        bounds_width = int(slide.properties.get('openslide.bounds-width', full_width))
+        bounds_height = int(slide.properties.get('openslide.bounds-height', full_height))
+
+        logger.info(f"Full slide dimensions: {full_width} x {full_height}")
+        logger.info(f"Tissue bounds: {bounds_width} x {bounds_height} at position ({bounds_x}, {bounds_y})")
 
         # Directorios de salida en la ubicación específica
-        # Extraer los valores de R y S del nombre del slide (ejemplo: slide-2023-02-18T08-07-19-R3-S11)
         if "R" in slide_name and "S" in slide_name:
-            # Buscar el patrón R seguido de números
             r_match = slide_name.split('-R')[-1].split('-')[0]
-            # Buscar el patrón S seguido de números
             s_match = slide_name.split('-S')[-1].split('-')[0]
-            
-            # Construir la ruta con los valores específicos de R y S
             slide_output_dir = Path(f"/mnt/work/users/bernat.olle/Results/R{r_match}/S{s_match}")
         else:
-            # Si no encuentra el patrón, usar una ruta por defecto
             slide_output_dir = Path(f"/mnt/work/users/bernat.olle/Results/{slide_name}")
-        
-        # Crear directorios para máscaras, originales y superposiciones
-        masks_output_dir = slide_output_dir / "masks"
-        os.makedirs(masks_output_dir, exist_ok=True)
-        
-        original_output_dir = slide_output_dir / "original"
-        os.makedirs(original_output_dir, exist_ok=True)
-        
-        overlay_output_dir = slide_output_dir / "overlay"
-        os.makedirs(overlay_output_dir, exist_ok=True)
-        
-        # Crear directorio para archivos QuPath si es necesario
-        qupath_output_dir = slide_output_dir / "qupath"
-        if export_qupath:
-            os.makedirs(qupath_output_dir, exist_ok=True)
+        logger.info(f"Directorio de salida: {slide_output_dir}")
 
-        # Detectar región de interés (ROI) donde están los riñones
-        print("Detectando región de interés (ROI)...")
-        x_roi, y_roi, width_roi, height_roi = detect_roi(slide, tissue_threshold=0.5, preview_level=2)
-        
-        # Guardar la ROI como una imagen de 1024x1024 si se solicita
+        # Crear el directorio de salida principal
+        os.makedirs(slide_output_dir, exist_ok=True)
+
+        # Crear subdirectorios solo si son necesarios
+        masks_output_dir = None
+        if save_mask:
+            masks_output_dir = slide_output_dir / "masks"
+            os.makedirs(masks_output_dir, exist_ok=True)
+            logger.info(f"Se guardarán máscaras en: {masks_output_dir}")
+
+        original_output_dir = None
+        if save_original:
+            original_output_dir = slide_output_dir / "original"
+            os.makedirs(original_output_dir, exist_ok=True)
+            logger.info(f"Se guardarán imágenes originales en: {original_output_dir}")
+
+        overlay_output_dir = None
+        if save_overlay:
+            overlay_output_dir = slide_output_dir / "overlay"
+            os.makedirs(overlay_output_dir, exist_ok=True)
+            logger.info(f"Se guardarán overlays en: {overlay_output_dir}")
+
+        geojson_output_dir = None
+        if save_geojson:
+            geojson_output_dir = slide_output_dir / "geojson"
+            os.makedirs(geojson_output_dir, exist_ok=True)
+            logger.info(f"Se guardarán archivos GeoJSON en: {geojson_output_dir}")
+
+        save_level_image(slide, slide_output_dir, level=7, bounds_x=bounds_x, bounds_y=bounds_y, bounds_height=bounds_height, bounds_width=bounds_width, slide_name=slide_name)
+
+        # ROI
+        x_roi = bounds_x
+        y_roi = bounds_y
+        width_roi = bounds_width
+        height_roi = bounds_height
+
+        # ROI 1024x1024
         if save_roi:
             roi_output_path = slide_output_dir / f"{slide_name}_ROI_1024x1024.png"
             save_roi_image(slide, x_roi, y_roi, width_roi, height_roi, roi_output_path)
 
-        # Obtener dimensiones
         downsample = slide.level_downsamples[level] if level > 0 else 1
 
-        print(f"\nProcesando {slide_name} (ROI: {width_roi}x{height_roi} en nivel {level})")
-        print(f"Filtros: extremos > {extreme_threshold*100}% | varianza < {min_variance}")
+        logger.info(f"Procesando {slide_name} (ROI: {width_roi}x{height_roi} en nivel {level})")
+        logger.info(f"Filtros: extremos > {extreme_threshold*100}% | varianza < {min_variance}")
+        logger.info(f"Filtro de fondo: activado={skip_background} | umbral={background_threshold} | píxeles extremos={extreme_pixel_ratio}")
 
         patch_id = 0
         valid_patches = 0
         rejected_patches = 0
-        
-        # Diccionarios para almacenar las máscaras y sus posiciones
+        background_patches = 0  # Contador para patches de fondo ignorados
+
         masks_dict = {}
         original_dict = {}
-        
-        # Calcular coordenadas de ROI ajustadas al nivel deseado
+
+        # Convertir coordenadas ROI al nivel especificado
         x_roi_level = int(x_roi / downsample) if level > 0 else x_roi
         y_roi_level = int(y_roi / downsample) if level > 0 else y_roi
         width_roi_level = int(width_roi / downsample) if level > 0 else width_roi
         height_roi_level = int(height_roi / downsample) if level > 0 else height_roi
         
-        # Iterar solo sobre la región de interés
-        for y in tqdm(range(y_roi_level, y_roi_level + height_roi_level, patch_size), desc="Procesando filas"):
-            for x in range(x_roi_level, x_roi_level + width_roi_level, patch_size):
+        logger.info(f"ROI en nivel {level}: {x_roi_level}, {y_roi_level}, {width_roi_level}, {height_roi_level}")
+
+        # Definir el tamaño del paso (stride) para los parches - asegurar cobertura completa
+        stride = patch_size // 2  # Asumimos solapamiento del 50%
+
+        # Calcular el número total de parches para la barra de progreso
+        total_patches = ((width_roi_level // stride) + 1) * ((height_roi_level // stride) + 1)
+        
+        # Log para depuración
+        logger.info(f"Procesando aproximadamente {total_patches} parches con stride={stride}")
+
+        # Asegurar que procesamos hasta el final de la imagen
+        # Ajustamos los límites para incluir parches completos hasta el final 
+        x_max = x_roi_level + width_roi_level
+        y_max = y_roi_level + height_roi_level
+        
+        # Variables para el cálculo del tiempo estimado
+        start_time = time.time()
+        last_time_update = start_time
+        processing_times = []  # Almacenar tiempos de procesamiento para cada parche
+        
+        # Iterar sobre todos los parches con el stride definido
+        for y in range(y_roi_level, y_max, stride):
+            for x in range(x_roi_level, x_max, stride):
+                # Marca de tiempo para este parche
+                patch_start_time = time.time()
+                
+                # Calcular dimensiones reales del parche (pueden ser menores en los bordes)
                 actual_width = min(patch_size, x_roi_level + width_roi_level - x)
                 actual_height = min(patch_size, y_roi_level + height_roi_level - y)
+                
+                # Procesar todos los parches, incluso los del borde
+                # Convertir coordenadas del nivel actual a nivel 0 (resolución completa)
+                x0 = int(x * downsample)
+                y0 = int(y * downsample)
+                
+                # Leer el parche
+                try:
+                    # Si el parche es menor que el tamaño completo, es un parche de borde
+                    is_edge_patch = actual_width < patch_size or actual_height < patch_size
+                    
+                    if is_edge_patch:
+                        # Para parches de borde, creamos un parche del tamaño estándar con fondo blanco
+                        # y colocamos el contenido real en la esquina superior izquierda
+                        patch = slide.read_region((x0, y0), level, (actual_width, actual_height))
+                        patch = patch.convert("RGB")
+                        
+                        # Crear un lienzo del tamaño completo (con fondo blanco)
+                        full_patch = Image.new("RGB", (patch_size, patch_size), (255, 255, 255))
+                        
+                        # Colocar el parche real en la esquina superior izquierda
+                        full_patch.paste(patch, (0, 0))
+                        
+                        # Convertir a numpy array
+                        patch_array = np.array(full_patch)
+                    else:
+                        # Para parches completos, simplemente leerlos directamente
+                        patch = slide.read_region((x0, y0), level, (patch_size, patch_size))
+                        patch = patch.convert("RGB")
+                        patch_array = np.array(patch)
 
-                # Solo recortes completos
-                if actual_width == patch_size and actual_height == patch_size:
-                    x0 = int(x * downsample)
-                    y0 = int(y * downsample)
-                    patch = slide.read_region((x0, y0), level, (patch_size, patch_size))
-                    patch = patch.convert("RGB")
-                    patch_array = np.array(patch)
+                    # Calcular coordenadas relativas al ROI (importantes para posicionamiento)
+                    x_rel = x0 - bounds_x
+                    y_rel = y0 - bounds_y
                     
-                    # Verificar si el parche es válido
-                    if is_extreme_image(patch_array, extreme_threshold, min_variance):
-                        rejected_patches += 1
-                        continue
-                    
-                    # Verificar si hay suficiente tejido si se requiere
-                    if skip_background:
-                        mask = detect_tissue_mask(patch_array, tissue_threshold)
-                        # Si no hay suficiente tejido, rechazar
-                        if np.sum(mask) < 0.05 * mask.size:
-                            rejected_patches += 1
-                            continue
-                    
-                    # Preprocesamiento: reducción de ruido si se solicita
-                    if denoise:
-                        patch_array = denoise_image(patch_array)
-                    
-                    # Guardar parche original si se solicita
-                    if save_original:
-                        orig_filename = f"{slide_name}_patch{patch_id:04d}_x{x}_y{y}.png"
+                    # Comprobar si es un parche de fondo
+                    if skip_background and is_background_patch(patch_array, background_threshold, extreme_pixel_ratio):
+                        background_patches += 1
+                        if background_patches % 100 == 0:  # Solo loguear cada 100 parches de fondo
+                            logger.info(f"Ignorados {background_patches} parches de fondo hasta ahora")
+                        continue  # Saltar este parche y continuar con el siguiente
+
+                    # Guardar imagen original si se solicita
+                    if save_original and original_output_dir:
+                        orig_filename = f"{slide_name}_patch{patch_id:04d}_x{x_rel}_y{y_rel}.png"
                         Image.fromarray(patch_array).save(original_output_dir / orig_filename)
-                    
-                    # Almacenar imagen original para composición final
-                    original_dict[(x, y)] = patch_array
-                    
-                    # Convertir de RGB a BGR para OpenCV
+
+                    # Guardar en diccionario para referencia posterior
+                    # Importante: Usamos las coordenadas relativas al ROI para posicionamiento correcto
+                    original_dict[(x_rel, y_rel)] = patch_array
+
+                    # Convertir a BGR para el modelo
                     patch_bgr = cv2.cvtColor(patch_array, cv2.COLOR_RGB2BGR)
-                    
-                    # Inferencia del modelo para segmentar glomérulos
-                    try:
-                        # Usando mmengine y mmseg en lugar de mmcv
-                        result = inference_model(model, patch_bgr)
-                        
-                        # Obtener la máscara de glomérulos
-                        glomeruli_mask = get_glomeruli_mask(result, patch_size, patch_size)
-                        
-                        # Guardar la máscara binaria
-                        mask_filename = f"{slide_name}_mask{patch_id:04d}_x{x}_y{y}.png"
+
+                    # Ejecutar inferencia del modelo
+                    result = inference_model(model, patch_bgr)
+                    glomeruli_mask = get_glomeruli_mask(result, patch_size, patch_size)
+
+                    # Restringir la máscara si es un parche de borde
+                    if is_edge_patch:
+                        # Si es un parche de borde, asegurar que la máscara solo tenga contenido en la zona válida
+                        edge_mask = np.zeros((patch_size, patch_size), dtype=np.uint8)
+                        edge_mask[0:actual_height, 0:actual_width] = glomeruli_mask[0:actual_height, 0:actual_width]
+                        glomeruli_mask = edge_mask
+
+                    # Guardar máscara si se solicita
+                    if save_mask and masks_output_dir:
+                        mask_filename = f"{slide_name}_mask{patch_id:04d}_x{x_rel}_y{y_rel}.png"
                         cv2.imwrite(str(masks_output_dir / mask_filename), glomeruli_mask)
-                        
-                        # Crear y guardar la imagen con la máscara superpuesta
+
+                    # Crear y guardar superposición si se solicita
+                    if save_overlay and overlay_output_dir:
                         overlay_image = create_overlay_image(patch_array, glomeruli_mask, overlay_alpha, mask_color)
-                        overlay_filename = f"{slide_name}_overlay{patch_id:04d}_x{x}_y{y}.png"
+                        overlay_filename = f"{slide_name}_overlay{patch_id:04d}_x{x_rel}_y{y_rel}.png"
                         cv2.imwrite(str(overlay_output_dir / overlay_filename), overlay_image)
+
+                    # Guardar máscara en diccionario con coordenadas relativas
+                    masks_dict[(x_rel, y_rel)] = glomeruli_mask
+                    
+                    # Registrar el tiempo que tomó procesar este parche
+                    patch_end_time = time.time()
+                    patch_time = patch_end_time - patch_start_time
+                    processing_times.append(patch_time)
+                    
+                    # Actualizar y mostrar el tiempo estimado cada 50 parches
+                    if patch_id % 50 == 0 and patch_id > 0:
+                        # Calcular tiempo promedio por parche usando los últimos 50 parches (o menos al inicio)
+                        recent_times = processing_times[-50:]
+                        avg_time_per_patch = sum(recent_times) / len(recent_times)
                         
-                        # Almacenar la máscara para la imagen compuesta
-                        masks_dict[(x, y)] = glomeruli_mask
+                        # Estimar tiempo restante
+                        remaining_patches = total_patches - patch_id - background_patches
+                        estimated_time_remaining = remaining_patches * avg_time_per_patch
                         
-                        patch_id += 1
-                        valid_patches += 1
-                    except Exception as e:
-                        print(f"Error en la predicción del parche {patch_id}: {e}")
-                        rejected_patches += 1
+                        # Formatear tiempo restante como HH:MM:SS
+                        time_remaining_str = str(timedelta(seconds=int(estimated_time_remaining)))
+                        
+                        # Calcular porcentaje completado
+                        percent_complete = ((patch_id + background_patches) / total_patches) * 100
+                        
+                        # Mostrar información de progreso
+                        elapsed_time = time.time() - start_time
+                        elapsed_time_str = str(timedelta(seconds=int(elapsed_time)))
+                        
+                        logger.info(f"Progreso: {patch_id + background_patches}/{total_patches} parches ({percent_complete:.1f}%) | "
+                                  f"Procesados: {patch_id} | Ignorados (fondo): {background_patches} | "
+                                  f"Tiempo transcurrido: {elapsed_time_str} | "
+                                  f"Tiempo restante estimado: {time_remaining_str} | "
+                                  f"Fin estimado: {datetime.now() + timedelta(seconds=estimated_time_remaining)}")
+                        
+                        # Actualizar la marca de tiempo de la última actualización
+                        last_time_update = time.time()
+
+                    patch_id += 1
+                    valid_patches += 1
+                except Exception as e:
+                    logger.error(f"Error en la predicción del parche en x={x}, y={y}: {e}")
+                    rejected_patches += 1
+
+        # Mostrar tiempo total de procesamiento
+        total_time = time.time() - start_time
+        total_time_str = str(timedelta(seconds=int(total_time)))
+        logger.info(f"Tiempo total de procesamiento: {total_time_str}")
+        logger.info(f"Parches procesados: {valid_patches} | Parches de fondo ignorados: {background_patches} | Parches con error: {rejected_patches}")
 
         # Generar y guardar la imagen compuesta del tamaño exacto de la ROI
-        composite_path = slide_output_dir / f"{slide_name}_glomeruli_composite.png"
-        save_composite_mask(masks_dict, original_dict, composite_path, 
-                           roi_dimensions=(width_roi_level, height_roi_level),
-                           alpha=overlay_alpha, color_name=mask_color)
-        
-        # Exportar a formato QuPath si se solicita
-        if export_qupath and masks_dict:
-            qpdata_path = qupath_output_dir / f"{slide_name}_glomeruli.qpdata"
-            generate_qpdata(masks_dict, original_dict, slide_path, qpdata_path, 
+        if save_overlay:
+            logger.info("\nGenerando imagen compuesta de la ROI completa...")
+            composite_path = slide_output_dir / f"{slide_name}_glomeruli_composite.png"
+            save_composite_mask(masks_dict, original_dict, composite_path, 
+                              roi_dimensions=(width_roi_level, height_roi_level),
+                              alpha=overlay_alpha, color_name=mask_color)
+            
+        # Exportar a formato GeoJSON si se solicita
+        if save_geojson and geojson_output_dir and masks_dict:
+            logger.info("Exportando a formato GeoJSON para QuPath...")
+            geojson_path = geojson_output_dir / f"{slide_name}_glomeruli.geojson"
+            generate_geojson(masks_dict, original_dict, slide_path, geojson_path, 
                            downsample, level, patch_size)
 
-        print(f"Procesamiento completo. Parches válidos: {valid_patches} | Rechazados: {rejected_patches}")
+        logger.info(f"Procesamiento completo. Parches válidos: {valid_patches} | Ignorados (fondo): {background_patches} | Rechazados: {rejected_patches}")
 
     except Exception as e:
-        print(f"Error al procesar {slide_path}: {e}")
+        logger.error(f"Error al procesar {slide_path}: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
     finally:
         if 'slide' in locals():
             slide.close()
-
-def generate_qpdata(masks_dict, original_dict, slide_path, output_path, downsample, level, patch_size):
+            
+        # Log de cierre
+        logger.info(f"Procesamiento finalizado para {slide_name}")
+        # Cerrar handlers de logging para liberar recursos
+        for handler in logger.handlers[:]:
+            handler.close()
+            logger.removeHandler(handler)
+            
+def generate_geojson(masks_dict, original_dict, slide_path, output_path, downsample, level, patch_size):
     """
-    Genera un archivo .qpdata para QuPath con todas las máscaras de glomérulos detectadas.
+    Genera un archivo GeoJSON para QuPath con todas las máscaras detectadas, 
+    consolidando glomérulos que aparecen en múltiples imágenes.
     
     Args:
         masks_dict: Diccionario con las coordenadas (x, y) como claves y las máscaras como valores
         original_dict: Diccionario con las coordenadas (x, y) como claves y las imágenes originales
         slide_path: Ruta al archivo MRXS original
-        output_path: Ruta donde guardar el archivo .qpdata
+        output_path: Ruta donde guardar el archivo GeoJSON
         downsample: Factor de escala del nivel procesado
         level: Nivel de la imagen procesada
         patch_size: Tamaño de los parches procesados
     """
+    logger = get_logger()
+    import cv2
+    import json
+    import uuid
+    from datetime import datetime
+    from pathlib import Path
+    import numpy as np
+    
     if not masks_dict:
-        print("No hay máscaras para exportar a QuPath")
+        logger.info("No hay máscaras para exportar a GeoJSON")
         return
     
     # Nombre del archivo slide
     slide_name = Path(slide_path).stem
-    slide_path_abs = str(Path(slide_path).resolve())
     
-    # Crear la estructura de datos para QuPath con referencia a la imagen
-    qupath_data = {
-        "type": "io.github.qupath.core.objects.PathAnnotationObject",
-        "id": str(uuid.uuid4()),
-        "name": "Glomeruli segmentation",
-        "color": -16776961,  # Color azul en RGB int
-        "colorRGB": -16776961,
-        "classProbability": 1.0,
-        "locked": False,
-        "readme": f"Glomeruli segmentation generated on {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
-        "annotations": [],
-        "imageData": {
-            "serverBuilder": {
-                "builderType": "openslide",
-                "uri": slide_path_abs
-            },
-            "entryID": 1,
-            "imageName": slide_name
-        }
+    # Crear la estructura GeoJSON
+    geojson_data = {
+        "type": "FeatureCollection",
+        "features": []
     }
     
     # Contar cuántas máscaras tenemos para procesar
     total_masks = len(masks_dict)
-    print(f"Procesando {total_masks} máscaras para exportar a QuPath...")
+    logger.info(f"Procesando {total_masks} máscaras para exportar a GeoJSON...")
     
-    # Contador para ROIs encontrados
-    total_rois = 0
+    # 1. Crear una imagen de tamaño completo para consolidar todas las máscaras
+    # Estimamos el tamaño total basado en las coordenadas más grandes
+    max_x = max(x for (x, y) in masks_dict.keys()) + patch_size
+    max_y = max(y for (x, y) in masks_dict.keys()) + patch_size
     
-    # Para cada máscara, extraer los contornos y convertirlos a coordenadas de QuPath
+    # Convertimos a coordenadas absolutas
+    max_x_abs = int(max_x * downsample)
+    max_y_abs = int(max_y * downsample)
+    
+    # Creamos una imagen en blanco para la máscara consolidada
+    consolidated_mask = np.zeros((max_y_abs, max_x_abs), dtype=np.uint8)
+    
+    # 2. Rellenar la máscara consolidada con todas las máscaras individuales
     for (x, y), mask in masks_dict.items():
-        # Convertir la máscara binaria a formato uint8 para OpenCV
+        # Convertir la máscara binaria a formato uint8
         if mask.dtype != np.uint8:
             binary_mask = (mask > 0).astype(np.uint8) * 255
         else:
             binary_mask = mask.copy()
         
-        # Encontrar contornos en la máscara
-        contours, _ = cv2.findContours(binary_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        
-        # Calcular las coordenadas absolutas en el nivel 0 (resolución completa)
+        # Calcular las coordenadas absolutas
         x_abs = int(x * downsample)
         y_abs = int(y * downsample)
         
-        # Procesar cada contorno encontrado
-        for contour in contours:
-            # Filtrar contornos muy pequeños (posible ruido)
-            if cv2.contourArea(contour) < 100:  # Ajustar este valor según sea necesario
-                continue
-            
-            # Simplificar el contorno para reducir el número de puntos
-            epsilon = 0.005 * cv2.arcLength(contour, True)
-            approx = cv2.approxPolyDP(contour, epsilon, True)
-            
-            # Convertir contorno a formato QuPath (lista de vértices)
-            vertices = []
-            for point in approx:
-                # Convertir coordenadas del parche a coordenadas absolutas del slide
-                px, py = point[0]
-                x_global = x_abs + px
-                y_global = y_abs + py
-                
-                vertices.append({
-                    "x": float(x_global),
-                    "y": float(y_global)
-                })
-            
-            # Si el contorno es válido, agregar a la lista de anotaciones
-            if len(vertices) >= 3:  # Un polígono necesita al menos 3 vértices
-                roi_data = {
-                    "type": "io.github.qupath.core.objects.PathAnnotationObject",
-                    "id": str(uuid.uuid4()),
-                    "name": "Glomerulus",
-                    "color": -16776961,  # Azul
-                    "colorRGB": -16776961,
-                    "classProbability": 1.0,
-                    "locked": False,
-                    "roi": {
-                        "type": "io.github.qupath.core.objects.classes.ROI",
-                        "name": "Polygon",
-                        "vertices": vertices,
-                        "closed": True
+        # Obtener el tamaño de la máscara
+        h, w = binary_mask.shape
+        
+        # Asegurarnos de que no nos salimos de los límites
+        end_x = min(x_abs + w, max_x_abs)
+        end_y = min(y_abs + h, max_y_abs)
+        
+        # Ajustar el tamaño si es necesario
+        mask_h = end_y - y_abs
+        mask_w = end_x - x_abs
+        
+        if mask_h != h or mask_w != w:
+            binary_mask = binary_mask[:mask_h, :mask_w]
+        
+        # Sumar la máscara a la imagen consolidada (usamos OR para evitar superposición)
+        consolidated_mask[y_abs:end_y, x_abs:end_x] = np.maximum(
+            consolidated_mask[y_abs:end_y, x_abs:end_x], 
+            binary_mask
+        )
+    
+    # 3. Encontrar contornos en la máscara consolidada
+    contours, _ = cv2.findContours(consolidated_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    
+    # Contador para ROIs encontrados
+    total_rois = 0
+    
+    # 4. Procesar cada contorno encontrado en la máscara consolidada
+    for contour in contours:
+        # Filtrar contornos muy pequeños (posible ruido)
+        if cv2.contourArea(contour) < 100:  # Ajustar este valor según sea necesario
+            continue
+        
+        # Simplificar el contorno para reducir el número de puntos
+        epsilon = 0.005 * cv2.arcLength(contour, True)
+        approx = cv2.approxPolyDP(contour, epsilon, True)
+        
+        # Convertir contorno a formato GeoJSON (polígono)
+        coordinates = []
+        for point in approx:
+            # Las coordenadas ya están en absolutas
+            px, py = point[0]
+            coordinates.append([float(px), float(py)])
+        
+        # Para cerrar el polígono, el último punto debe ser igual al primero
+        if coordinates and coordinates[0] != coordinates[-1]:
+            coordinates.append(coordinates[0])
+        
+        # Si el contorno es válido, agregar a la lista de features
+        if len(coordinates) >= 4:  # Un polígono cerrado necesita al menos 4 puntos
+            feature = {
+                "type": "Feature",
+                "id": str(uuid.uuid4()),
+                "geometry": {
+                    "type": "Polygon",
+                    "coordinates": [coordinates]  # GeoJSON requiere un array anidado para polígonos
+                },
+                "properties": {
+                    "classification": {
+                        "name": "Positive",
+                        "color": [0, 0, 255]  # Color en formato RGB [R, G, B]
                     },
+                    "isLocked": False,
                     "measurements": []
                 }
-                
-                qupath_data["annotations"].append(roi_data)
-                total_rois += 1
+            }
+            
+            geojson_data["features"].append(feature)
+            total_rois += 1
     
-    # Escribir el archivo .qpdata
+    # Cambiar la extensión del archivo de salida a .geojson
+    output_path = Path(str(output_path).replace('.qpdata', '.geojson'))
+    
+    # Escribir el archivo GeoJSON
     with open(output_path, 'w', encoding='utf-8') as f:
-        json.dump(qupath_data, f, indent=2)
+        json.dump(geojson_data, f, indent=2)
     
-    print(f"Exportación a QuPath completada: {total_rois} ROIs de glomérulos guardados en {output_path}")
-
-    # También crear un archivo de proyecto QuPath mínimo
-    project_file = Path(output_path).parent / f"{slide_name}.qpproj"
-    
-    project_data = {
-        "version": "0.3.2",
-        "uri": str(project_file.resolve()),
-        "name": f"Glomeruli Project - {slide_name}",
-        "description": "Proyecto de segmentación automática de glomérulos",
-        "creationTimestamp": datetime.now().isoformat(),
-        "modificationTimestamp": datetime.now().isoformat(),
-        "images": [{
-            "serverBuilder": {
-                "builderType": "openslide",
-                "uri": slide_path_abs
-            },
-            "entryID": 1,
-            "randomizedName": str(uuid.uuid4()),
-            "name": slide_name,
-            "metadata": {
-                "openslide.vendor": "3DHISTECH",
-                "openslide.level-count": "1"
-            },
-            "objectData": str(output_path.resolve())  # Referencia al archivo de anotaciones
-        }]
-    }
-    
-    with open(project_file, 'w', encoding='utf-8') as f:
-        json.dump(project_data, f, indent=2)
-    
-    print(f"Archivo de proyecto QuPath generado en {project_file}")
+    logger.info(f"Exportación a GeoJSON completada: {total_rois} ROIs positivos guardados en {output_path}")
     
     return output_path
 
-def main():
+def procesar_imagen():
     args = parse_args()
+    
+    # Inicializar el logger global una sola vez
+    setup_logger(args.input_dir)
+    logger = get_logger()
+    
+    logger.info("Iniciando procesamiento con los siguientes parámetros:")
+    logger.info(f"Tamaño de parche: {args.patch_size}")
+    logger.info(f"Stride: {args.stride}")
+    logger.info(f"Nivel: {args.level}")
+    logger.info(f"Filtro de fondo: {args.skip_background} (umbral: {args.background_threshold}, píxeles extremos: {args.extreme_pixel_ratio})")
+    
     input_path = Path(args.input_dir)
-
+    
     # Inicializar el modelo
-    print("Inicializando modelo Mask2Former...")
+    logger.info("Inicializando modelo Mask2Former...")
     model = initialize_model(args.config_path, args.ckpt_path)
-    print("Modelo cargado correctamente")
+    logger.info("Modelo cargado correctamente")
 
     # Buscar archivos MRXS
     if input_path.is_file() and input_path.suffix.lower() == ".mrxs":
@@ -732,14 +1053,14 @@ def main():
     elif input_path.is_dir():
         mrxs_files = glob.glob(os.path.join(args.input_dir, "*.mrxs"))
     else:
-        print(f"❌ Ruta inválida: {args.input_dir}")
+        logger.error(f"❌ Ruta inválida: {args.input_dir}")
         return
 
     if not mrxs_files:
-        print(f"❌ No se encontraron archivos MRXS en {args.input_dir}")
+        logger.warning(f"❌ No se encontraron archivos MRXS en {args.input_dir}")
         return
 
-    print(f"🔍 Encontrados {len(mrxs_files)} archivos MRXS")
+    logger.info(f"🔍 Encontrados {len(mrxs_files)} archivos MRXS")
 
     # Procesar cada archivo
     for slide_path in mrxs_files:
@@ -753,14 +1074,18 @@ def main():
             denoise=args.denoise,
             tissue_threshold=args.tissue_threshold,
             skip_background=args.skip_background,
+            background_threshold=args.background_threshold,
+            extreme_pixel_ratio=args.extreme_pixel_ratio,
             save_roi=args.save_roi,
             save_original=args.save_original,
+            save_mask=args.save_mask,
+            save_overlay=args.save_overlay,
+            save_geojson=args.save_geojson,
             overlay_alpha=args.overlay_alpha,
-            mask_color=args.mask_color,
-            export_qupath=args.export_qupath
+            mask_color=args.mask_color
         )
 
-    print("\n✅ Procesamiento completado")
+    logger.info("\n✅ Procesamiento completado")
 
 if __name__ == "__main__":
-    main()
+    procesar_imagen()
