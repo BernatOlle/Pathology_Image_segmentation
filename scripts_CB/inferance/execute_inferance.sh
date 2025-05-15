@@ -3,14 +3,15 @@
 # Directorio donde se encuentran las imágenes MRXS
 INPUT_DIR="/mnt/work/datasets/BKidney/CROC/"
 
-echo "Buscando archivos MRXS con 'R4' en su nombre..."
+echo "Buscando archivos MRXS con 'R5' en su nombre..."
 
 # Encontrar todos los archivos .mrxs que contienen "R3" en su nombre
-mrxs_files=$(find "$INPUT_DIR" -name "*.mrxs" | grep "R4")
+mrxs_files=$(find "$INPUT_DIR" -name "*.mrxs" | grep -E "R5|R4")
+
 
 # Verificar si se encontraron archivos
 if [ -z "$mrxs_files" ]; then
-    echo "No se encontraron archivos .mrxs que contengan 'R4' en el directorio $INPUT_DIR"
+    echo "No se encontraron archivos .mrxs que contengan 'R5' en el directorio $INPUT_DIR"
     exit 1
 fi
 
@@ -25,7 +26,7 @@ count=1
 # Contador para controlar grupos de 5
 group_count=0
 # Número de trabajos en paralelo
-max_parallel=5
+max_parallel=10
 
 for mrxs_file in "${mrxs_array[@]}"; do
     # Extraer el nombre del archivo

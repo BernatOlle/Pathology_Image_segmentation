@@ -6,6 +6,7 @@ import numpy as np
 from tqdm import tqdm
 import openslide
 from PIL import Image
+import re
 import cv2
 from scipy import ndimage
 import torch
@@ -50,11 +51,11 @@ def parse_args():
                         default='/home/usuaris/imatge/bernat.olle/Pathology_Image_segmentation/mask2Former/mask2former_swin-b_kpis_isbi_768.py', 
                         help='Ruta del archivo de configuración del modelo')
     parser.add_argument('--ckpt_path', type=str, 
-                        default='/home/usuaris/imatge/bernat.olle/Pathology_Image_segmentation/mmsegmentation/mask2former_swin-b_kpis_768/best_mDice_iter_17000.pth', 
+                        default='/home/usuaris/imatge/bernat.olle/Pathology_Image_segmentation/mmsegmentation/mask2former_swin-b_kpis_768/best_mDice_iter_21000.pth', 
                         help='Ruta del archivo de checkpoint del modelo')
     parser.add_argument('--save_original', action='store_true', help='Guardar parches originales')
     parser.add_argument('--save_mask', action='store_true', help='Guardar máscaras de segmentación')
-    parser.add_argument('--save_overlay', action='store_true', help='Guardar imágenes con overlay')
+    parser.add_argument('--save_composite', action='store_true', help='Guardar WSI completa de mascaras')
     parser.add_argument('--save_geojson', action='store_true', help='Guardar máscaras en formato GeoJSON para QuPath')
     parser.add_argument('--overlay_alpha', type=float, default=0.5, help='Transparencia de la máscara sobre la imagen original (0-1)')
     parser.add_argument('--mask_color', type=str, default='blue', help='Color para la máscara (red, green, blue, yellow, magenta, cyan)')
@@ -263,11 +264,46 @@ def save_roi_image(slide, x_roi, y_roi, width_roi, height_roi, output_path, targ
 def initialize_model(config_path, ckpt_path, device='cuda:0'):
     """
     Inicializa el modelo Mask2Former para segmentación de glomérulos
-    usando mmseg y mmengine
+    usando mmseg y mmengine. Si el checkpoint especificado no existe,
+    busca el archivo best_mDice_iter_xx.pth con el número más alto en la misma carpeta.
     """
     # Inicializar el ámbito predeterminado para mmseg
     logger = get_logger()
     init_default_scope('mmseg')
+    
+    # Verificar si el checkpoint existe
+    if not os.path.exists(ckpt_path):
+        logger.warning(f"Checkpoint {ckpt_path} no encontrado. Buscando alternativa...")
+        
+        # Obtener el directorio donde buscar
+        ckpt_dir = os.path.dirname(ckpt_path)
+        
+        # Buscar todos los archivos que coincidan con el patrón best_mDice_iter_*.pth
+        pattern = os.path.join(ckpt_dir, "best_mDice_iter_*.pth")
+        matches = glob.glob(pattern)
+        
+        if matches:
+            # Extraer el número de iteración de cada archivo y ordenar
+            iter_files = []
+            for match in matches:
+                filename = os.path.basename(match)
+                iter_match = re.search(r'best_mDice_iter_(\d+)\.pth', filename)
+                if iter_match:
+                    iter_num = int(iter_match.group(1))
+                    iter_files.append((iter_num, match))
+            
+            # Ordenar por número de iteración (de mayor a menor)
+            iter_files.sort(reverse=True)
+            
+            if iter_files:
+                # Usar el archivo con el número de iteración más alto
+                best_ckpt = iter_files[0][1]
+                logger.info(f"Usando checkpoint alternativo: {best_ckpt}")
+                ckpt_path = best_ckpt
+            else:
+                logger.error("No se encontraron checkpoints alternativos.")
+        else:
+            logger.error(f"No se encontraron archivos que coincidan con {pattern}")
     
     # Cargar el modelo
     model = init_model(config_path, ckpt_path, device=device)
@@ -373,17 +409,13 @@ def create_overlay_image(original_image, mask, alpha=0.5, color_name='blue'):
 def save_composite_mask(masks_dict, original_dict, output_path, roi_dimensions, 
                       alpha=0.5, color_name='blue', target_size=(1024, 1024)):
     """
-    Guarda una imagen compuesta de todas las máscaras de glomérulos superpuestas a
-    las imágenes originales, redimensionada a 1024x1024 manteniendo el aspect ratio.
+    Guarda una imagen compuesta de todas las máscaras binarias de glomérulos,
+    sin superponerlas a las imágenes originales y sin redimensionar.
     
     Args:
         masks_dict: Diccionario con las coordenadas (x, y) como claves y las máscaras como valores
-        original_dict: Diccionario con las coordenadas (x, y) como claves y las imágenes originales como valores
         output_path: Ruta donde guardar la imagen compuesta
         roi_dimensions: Tupla (width, height) con las dimensiones de la ROI original
-        alpha: Nivel de transparencia de la máscara
-        color_name: Color de la máscara superpuesta
-        target_size: Tamaño objetivo para redimensionar (default 1024x1024)
     """
     # Extraer las dimensiones de la ROI
     logger = get_logger()
@@ -394,8 +426,8 @@ def save_composite_mask(masks_dict, original_dict, output_path, roi_dimensions,
         logger.info(f"Error: Dimensiones inválidas {roi_width}x{roi_height}")
         return
 
-    # Crear una imagen del tamaño exacto de la ROI para la composición
-    composite = np.zeros((roi_height, roi_width, 3), dtype=np.uint8)
+    # Crear una imagen binaria del tamaño exacto de la ROI para la composición
+    composite = np.zeros((roi_height, roi_width), dtype=np.uint8)
     
     # Crear un mapa de cobertura para rastrear qué áreas de la ROI han sido cubiertas
     coverage_map = np.zeros((roi_height, roi_width), dtype=bool)
@@ -421,32 +453,36 @@ def save_composite_mask(masks_dict, original_dict, output_path, roi_dimensions,
                 elif i == 10:
                     logger.info("  ...")
             
-            # Colocar cada parche con su máscara superpuesta
+            # Colocar cada máscara binaria
             for (x, y), mask in masks_dict.items():
-                if (x, y) in original_dict:
-                    # Calcular posición relativa dentro de la ROI
-                    rel_x = x - min_x
-                    rel_y = y - min_y
+                # Calcular posición relativa dentro de la ROI
+                rel_x = x - min_x
+                rel_y = y - min_y
+                
+                # Verificar si la posición está dentro de los límites
+                if rel_x >= 0 and rel_y >= 0 and rel_x < roi_width and rel_y < roi_height:
+                    # Asegurarse de que la máscara sea binaria (255 para píxeles con máscara)
+                    binary_mask = np.zeros_like(mask)
+                    binary_mask[mask > 0] = 255
                     
-                    # Verificar si la posición está dentro de los límites
-                    if rel_x >= 0 and rel_y >= 0 and rel_x < roi_width and rel_y < roi_height:
-                        original = original_dict[(x, y)]
-                        overlay = create_overlay_image(original, mask, alpha, color_name)
+                    # Calcular límites efectivos (asegurando que no se salga de los bordes)
+                    y_end = min(rel_y + patch_height, roi_height)
+                    x_end = min(rel_x + patch_width, roi_width)
+                    patch_y_end = y_end - rel_y
+                    patch_x_end = x_end - rel_x
+                    
+                    # Colocar el parche en la posición correcta
+                    if x_end > rel_x and y_end > rel_y:  # Verificar que el parche tiene área válida
+                        # Usamos el máximo para evitar sobrescribir áreas ya cubiertas
+                        composite[rel_y:y_end, rel_x:x_end] = np.maximum(
+                            composite[rel_y:y_end, rel_x:x_end],
+                            binary_mask[:patch_y_end, :patch_x_end]
+                        )
+                        coverage_map[rel_y:y_end, rel_x:x_end] = True
                         
-                        # Calcular límites efectivos (asegurando que no se salga de los bordes)
-                        y_end = min(rel_y + patch_height, roi_height)
-                        x_end = min(rel_x + patch_width, roi_width)
-                        patch_y_end = y_end - rel_y
-                        patch_x_end = x_end - rel_x
-                        
-                        # Colocar el parche en la posición correcta
-                        if x_end > rel_x and y_end > rel_y:  # Verificar que el parche tiene área válida
-                            composite[rel_y:y_end, rel_x:x_end] = overlay[:patch_y_end, :patch_x_end]
-                            coverage_map[rel_y:y_end, rel_x:x_end] = True
-                            
-                            # Para depuración: Mostrar información sobre la colocación
-                            if rel_x < 100 and rel_y < 100:  # Solo para los primeros parches
-                                logger.info(f"Colocado parche ({x},{y}) en posición relativa ({rel_x},{rel_y}) hasta ({x_end},{y_end})")
+                        # Para depuración: Mostrar información sobre la colocación
+                        if rel_x < 100 and rel_y < 100:  # Solo para los primeros parches
+                            logger.info(f"Colocado parche ({x},{y}) en posición relativa ({rel_x},{rel_y}) hasta ({x_end},{y_end})")
             
             # Verificar cobertura e informar
             coverage_percent = np.sum(coverage_map) / (roi_height * roi_width) * 100
@@ -475,41 +511,23 @@ def save_composite_mask(masks_dict, original_dict, output_path, roi_dimensions,
         except Exception as e:
             logger.info(f"Error al crear composición: {e}")
             import traceback
-            traceback.logger.info_exc()
+            traceback.print_exc()
             return
 
-    # Verificar que la imagen compuesta es válida antes de redimensionar
+    # Verificar que la imagen compuesta es válida
     if composite.size == 0 or np.all(composite == 0):
         logger.info("Error: Imagen compuesta vacía o completamente negra")
         return
 
-    # Obtener dimensiones actuales
-    h, w = composite.shape[:2]
-    
-    # Calcular factor de escala manteniendo aspect ratio
+    # Guardar la imagen compuesta sin redimensionar
     try:
-        scale = min(target_size[0]/w, target_size[1]/h)
-        new_w, new_h = int(w * scale), int(h * scale)
-        
-        # Redimensionar usando interpolación de área
-        resized = cv2.resize(composite, (new_w, new_h), interpolation=cv2.INTER_AREA)
-        
-        # Crear imagen final con fondo negro
-        final_image = np.zeros((target_size[1], target_size[0], 3), dtype=np.uint8)
-        
-        # Centrar la imagen redimensionada
-        x_offset = (target_size[0] - new_w) // 2
-        y_offset = (target_size[1] - new_h) // 2
-        final_image[y_offset:y_offset+new_h, x_offset:x_offset+new_w] = resized
-        
-        # Guardar la imagen compuesta
-        cv2.imwrite(str(output_path), final_image)
-        logger.info(f"Imagen compuesta guardada en {output_path} ({w}x{h} -> {target_size[0]}x{target_size[1]})")
+        cv2.imwrite(str(output_path), composite)
+        logger.info(f"Imagen compuesta de máscaras binarias guardada en {output_path} ({roi_width}x{roi_height})")
         
     except Exception as e:
-        logger.info(f"Error al redimensionar imagen: {e}")
+        logger.info(f"Error al guardar imagen: {e}")
         import traceback
-        traceback.logger.info_exc()
+        traceback.print_exc()
 
 def is_background_patch(patch_array, background_threshold=0.85, extreme_pixel_ratio=0.9):
     """
@@ -604,7 +622,7 @@ def extract_patches_and_predict(slide_path, model, patch_size=2048, level=0,
                               denoise=False, tissue_threshold=0.8,
                               skip_background=False, save_roi=False,
                               save_original=False, save_mask=False, 
-                              save_overlay=False, save_geojson=False,
+                              save_composite=False, save_geojson=False,
                               overlay_alpha=0.5, mask_color='blue',
                               background_threshold=0.85, extreme_pixel_ratio=0.9):
     logger = get_logger()
@@ -653,10 +671,6 @@ def extract_patches_and_predict(slide_path, model, patch_size=2048, level=0,
             logger.info(f"Se guardarán imágenes originales en: {original_output_dir}")
 
         overlay_output_dir = None
-        if save_overlay:
-            overlay_output_dir = slide_output_dir / "overlay"
-            os.makedirs(overlay_output_dir, exist_ok=True)
-            logger.info(f"Se guardarán overlays en: {overlay_output_dir}")
 
         geojson_output_dir = None
         if save_geojson:
@@ -797,11 +811,6 @@ def extract_patches_and_predict(slide_path, model, patch_size=2048, level=0,
                         mask_filename = f"{slide_name}_mask{patch_id:04d}_x{x_rel}_y{y_rel}.png"
                         cv2.imwrite(str(masks_output_dir / mask_filename), glomeruli_mask)
 
-                    # Crear y guardar superposición si se solicita
-                    if save_overlay and overlay_output_dir:
-                        overlay_image = create_overlay_image(patch_array, glomeruli_mask, overlay_alpha, mask_color)
-                        overlay_filename = f"{slide_name}_overlay{patch_id:04d}_x{x_rel}_y{y_rel}.png"
-                        cv2.imwrite(str(overlay_output_dir / overlay_filename), overlay_image)
 
                     # Guardar máscara en diccionario con coordenadas relativas
                     masks_dict[(x_rel, y_rel)] = glomeruli_mask
@@ -853,7 +862,7 @@ def extract_patches_and_predict(slide_path, model, patch_size=2048, level=0,
         logger.info(f"Parches procesados: {valid_patches} | Parches de fondo ignorados: {background_patches} | Parches con error: {rejected_patches}")
 
         # Generar y guardar la imagen compuesta del tamaño exacto de la ROI
-        if save_overlay:
+        if save_composite:
             logger.info("\nGenerando imagen compuesta de la ROI completa...")
             composite_path = slide_output_dir / f"{slide_name}_glomeruli_composite.png"
             save_composite_mask(masks_dict, original_dict, composite_path, 
@@ -1079,7 +1088,7 @@ def procesar_imagen():
             save_roi=args.save_roi,
             save_original=args.save_original,
             save_mask=args.save_mask,
-            save_overlay=args.save_overlay,
+            save_composite=args.save_composite,
             save_geojson=args.save_geojson,
             overlay_alpha=args.overlay_alpha,
             mask_color=args.mask_color

@@ -1,6 +1,7 @@
 import logging
 import os
 import glob
+import re
 
 # Variable global para el logger
 _logger = None
@@ -38,9 +39,16 @@ def setup_logger(input_dir, logs_dir=None, console_output=False):
     mrxs_basename = os.path.basename(mrxs_path)
     mrxs_name = os.path.splitext(mrxs_basename)[0]
     
-    # Si no se especifica una carpeta de logs, usar './logs'
+    # Extraer el número del ratón del nombre del archivo
+    # Buscar patrones como "R1", "R01", "R_1", etc.
+    mouse_number = "0"  # Valor por defecto si no se encuentra
+    mouse_pattern = re.search(r'[Rr][-_]?(\d+)', mrxs_name)
+    if mouse_pattern:
+        mouse_number = mouse_pattern.group(1)
+    
+    # Si no se especifica una carpeta de logs, usar 'logs/R{numero}'
     if logs_dir is None:
-        logs_dir = os.path.join(os.getcwd(), 'logs')
+        logs_dir = os.path.join(os.getcwd(), 'logs', f'R{mouse_number}')
     
     # Crear el directorio para logs si no existe
     os.makedirs(logs_dir, exist_ok=True)
@@ -66,8 +74,8 @@ def setup_logger(input_dir, logs_dir=None, console_output=False):
         console_handler.setFormatter(formatter)
         _logger.addHandler(console_handler)
     
-    # Handler para archivo (siempre se añade)
-    file_handler = logging.FileHandler(log_filename)
+    # Handler para archivo (siempre se añade) - modo 'w' para sobrescribir el archivo si existe
+    file_handler = logging.FileHandler(log_filename, mode='w')
     file_handler.setFormatter(formatter)
     _logger.addHandler(file_handler)
     
@@ -88,12 +96,13 @@ def get_logger():
         
         # Verificar si ya tiene handlers para evitar duplicados
         if not _logger.handlers:
-            # Solo crear un handler de archivo, no de consola
-            logs_dir = os.path.join(os.getcwd(), 'logs')
+            # Usar la carpeta logs/R0 para guardar los logs por defecto
+            logs_dir = os.path.join(os.getcwd(), 'logs', 'R0')
             os.makedirs(logs_dir, exist_ok=True)
             log_filename = os.path.join(logs_dir, "default_logs.log")
             
-            file_handler = logging.FileHandler(log_filename)
+            # Usar modo 'w' para sobrescribir el archivo si existe
+            file_handler = logging.FileHandler(log_filename, mode='w')
             formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
             file_handler.setFormatter(formatter)
             _logger.addHandler(file_handler)
